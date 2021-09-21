@@ -10,6 +10,7 @@ Shader "Hidden/Universal Render Pipeline/UberPost"
         #pragma multi_compile_local_fragment _ _DITHERING
         #pragma multi_compile_local_fragment _ _LINEAR_TO_SRGB_CONVERSION
         #pragma multi_compile_local_fragment _ _USE_FAST_SRGB_LINEAR_CONVERSION
+        #pragma multi_compile_local_fragment _ _FSR
         #pragma multi_compile _ _USE_DRAW_PROCEDURAL
         #pragma multi_compile_fragment _ DEBUG_DISPLAY
 
@@ -218,6 +219,13 @@ Shader "Hidden/Universal Render Pipeline/UberPost"
                 // Assume color > 0 and prevent 0 - ditherNoise.
                 // Negative colors can cause problems if fed back to the postprocess via render to FP16 texture.
                 color = max(color, 0);
+            }
+            #endif
+
+            // FSR expects the input image to be in gamma 2.0 color space
+            #if _FSR
+            {
+                color = LinearToGamma20(color);
             }
             #endif
 

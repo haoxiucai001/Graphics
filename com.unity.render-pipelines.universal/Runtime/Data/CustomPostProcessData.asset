@@ -10,7 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 572910c10080c0945a0ef731ccedc739, type: 3}
-  m_Name: PostProcessData
+  m_Name: CustomPostProcessData
   m_EditorClassIdentifier: 
   shaders:
     stopNanPS: {fileID: 4800000, guid: 1121bb4e615ca3c48b214e79e841e823, type: 3}
@@ -29,6 +29,7 @@ MonoBehaviour:
     bloomPS: {fileID: 4800000, guid: 5f1864addb451f54bae8c86d230f736e, type: 3}
     LensFlareDataDrivenPS: {fileID: 4800000, guid: 6cda457ac28612740adb23da5d39ea92,
       type: 3}
+    fsrPS: {fileID: 4800000, guid: ea8f622482068144db69da9f0a455bf4, type: 3}
     uberPostPS: {fileID: 4800000, guid: e7857e9d0c934dc4f83f270f8447b006, type: 3}
     finalPostPassPS: {fileID: 4800000, guid: c49e63ed1bbcb334780a3bd19dfed403, type: 3}
   textures:

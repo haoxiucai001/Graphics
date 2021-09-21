@@ -105,6 +105,7 @@ namespace UnityEngine.Rendering.Universal
         internal int pixelHeight;
         internal float aspectRatio;
         public float renderScale;
+        public UpscalingMode upscalingMode;
         public bool clearDepth;
         public CameraType cameraType;
         public bool isDefaultViewport;
@@ -400,6 +401,7 @@ namespace UnityEngine.Rendering.Universal
         public static readonly string Fxaa = "_FXAA";
         public static readonly string Dithering = "_DITHERING";
         public static readonly string ScreenSpaceOcclusion = "_SCREEN_SPACE_OCCLUSION";
+        public static readonly string FSR = "_FSR";
 
         public static readonly string HighQualitySampling = "_HIGH_QUALITY_SAMPLING";
 
@@ -853,6 +855,7 @@ namespace UnityEngine.Rendering.Universal
         BokehDepthOfField,
         MotionBlur,
         PaniniProjection,
+        FSR,
         UberPostProcess,
         Bloom,
         LensFlareDataDriven,

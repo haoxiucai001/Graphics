@@ -103,6 +103,12 @@
     #define GATHER_BLUE_TEXTURE2D_X(textureName, samplerName, coord2)       GATHER_BLUE_TEXTURE2D(textureName, samplerName, coord2)
 #endif
 
+// Ultra Quality -> -0.38
+// Quality       -> -0.58
+// Balanced      -> -0.79
+// Performance   -> -1.0
+#define SAMPLE_TEXTURE2D(textureName, samplerName, coord2)                  SAMPLE_TEXTURE2D_BIAS(textureName, samplerName, coord2, -1.0)
+
 // Structs
 struct VertexPositionInputs
 {

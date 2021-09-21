@@ -499,6 +499,11 @@ namespace UnityEngine.Rendering.Universal.Internal
                 if (RequireSRGBConversionBlitToBackBuffer(cameraData))
                     m_Materials.uber.EnableKeyword(ShaderKeywordStrings.LinearToSRGBConversion);
 
+                if (cameraData.upscalingMode == UpscalingMode.FSR)
+                {
+                    m_Materials.uber.EnableKeyword(ShaderKeywordStrings.FSR);
+                }
+
                 if (m_UseFastSRGBLinearConversion)
                 {
                     m_Materials.uber.EnableKeyword(ShaderKeywordStrings.UseFastSRGBLinearConversion);
@@ -1369,11 +1374,7 @@ namespace UnityEngine.Rendering.Universal.Internal
 
             GetActiveDebugHandler(renderingData)?.UpdateShaderGlobalPropertiesForFinalValidationPass(cmd, ref cameraData, m_IsFinalPass);
 
-            if (!m_UseSwapBuffer)
-            {
-                cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, m_Source);
-            }
-            else if (m_Source.nameID == cameraData.renderer.GetCameraColorFrontBuffer(cmd))
+            if (m_UseSwapBuffer && (m_Source.nameID == cameraData.renderer.GetCameraColorFrontBuffer(cmd)))
             {
                 m_Source = cameraData.renderer.cameraColorTargetHandle;
             }
@@ -1381,6 +1382,42 @@ namespace UnityEngine.Rendering.Universal.Internal
             cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, m_Source);
 
             var colorLoadAction = cameraData.isDefaultViewport ? RenderBufferLoadAction.DontCare : RenderBufferLoadAction.Load;
+
+            // TODO: Make this calculated once
+            int finalUpscaleTextureId = Shader.PropertyToID("_FinalUpscaleTexture");
+            int finalUpscaleTextureId2 = Shader.PropertyToID("_FinalUpscaleTexture2");
+
+            bool runFSR = (cameraData.upscalingMode == UpscalingMode.FSR);
+            if (runFSR)
+            {
+                var rtDesc = cameraData.cameraTargetDescriptor;
+                rtDesc.width = cameraData.pixelWidth;
+                rtDesc.height = cameraData.pixelHeight;
+                rtDesc.msaaSamples = 1;
+                rtDesc.depthBufferBits = 0;
+
+                cmd.GetTemporaryRT(finalUpscaleTextureId, rtDesc, FilterMode.Bilinear);
+                var destId = new RenderTargetIdentifier(finalUpscaleTextureId, 0, CubemapFace.Unknown, -1);
+
+                cmd.GetTemporaryRT(finalUpscaleTextureId2, rtDesc, FilterMode.Bilinear);
+                var destId2 = new RenderTargetIdentifier(finalUpscaleTextureId2, 0, CubemapFace.Unknown, -1);
+
+                using (new ProfilingScope(cmd, ProfilingSampler.Get(URPProfileId.FSR)))
+                {
+                    RenderTargetIdentifier cameraTarget = (cameraData.targetTexture != null) ? new RenderTargetIdentifier(cameraData.targetTexture) : cameraTargetHandle.Identifier();
+                    cmd.SetRenderTarget(cameraTarget, colorLoadAction, RenderBufferStoreAction.Store, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.DontCare);
+                    cmd.SetViewport(cameraData.pixelRect);
+                    cmd.Blit(m_Source, destId, m_Materials.fsr, 0);
+
+                    cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, destId);
+                    cmd.Blit(destId, destId2, m_Materials.fsr, 1);
+
+                    cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, destId2);
+                    PostProcessUtils.SetSourceSize(cmd, rtDesc);
+
+                    m_Source = destId2;
+                }
+            }
 
 #if ENABLE_VR && ENABLE_XR_MODULE
             if (cameraData.xr.enabled)
@@ -1418,6 +1455,12 @@ namespace UnityEngine.Rendering.Universal.Internal
                 cameraData.renderer.ConfigureCameraTarget(cameraTarget, cameraTarget);
 #pragma warning restore 0618
             }
+
+            if (runFSR)
+            {
+                cmd.ReleaseTemporaryRT(finalUpscaleTextureId);
+                cmd.ReleaseTemporaryRT(finalUpscaleTextureId2);
+            }
         }
 
         #endregion
@@ -1433,6 +1476,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             public readonly Material cameraMotionBlur;
             public readonly Material paniniProjection;
             public readonly Material bloom;
+            public readonly Material fsr;
             public readonly Material uber;
             public readonly Material finalPass;
             public readonly Material lensFlareDataDriven;
@@ -1446,6 +1490,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                 cameraMotionBlur = Load(data.shaders.cameraMotionBlurPS);
                 paniniProjection = Load(data.shaders.paniniProjectionPS);
                 bloom = Load(data.shaders.bloomPS);
+                fsr = Load(data.shaders.fsrPS);
                 uber = Load(data.shaders.uberPostPS);
                 finalPass = Load(data.shaders.finalPostPassPS);
                 lensFlareDataDriven = Load(data.shaders.LensFlareDataDrivenPS);
@@ -1475,6 +1520,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                 CoreUtils.Destroy(cameraMotionBlur);
                 CoreUtils.Destroy(paniniProjection);
                 CoreUtils.Destroy(bloom);
+                CoreUtils.Destroy(fsr);
                 CoreUtils.Destroy(uber);
                 CoreUtils.Destroy(finalPass);
             }
@@ -1536,6 +1582,8 @@ namespace UnityEngine.Rendering.Universal.Internal
             public static readonly int _FlareData5 = Shader.PropertyToID("_FlareData5");
 
             public static readonly int _FullscreenProjMat = Shader.PropertyToID("_FullscreenProjMat");
+
+            public static readonly int _UpscaleTexture = Shader.PropertyToID("_UpscaleTexture");
 
             public static int[] _BloomMipUp;
             public static int[] _BloomMipDown;
