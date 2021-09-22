@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Added
 - Added public API to edit materials from script at runtime.
+- Added new configuration ShderOptions.FPTLMaxLightCount in ShaderConfig.cs for maximum light count per fine pruned tile.
 
 ### Fixed
 - Fixed impossibility to release the cursor in the template.
@@ -104,6 +105,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Path-traced volumetric scattering now takes fog color into account, adding scattered contribution on top of the non-scattered result (cases 1346105, 1358783).
 - Fixed minor readability issues in the ray tracing code.
 - PrepareLightsForGPU CPU Light loop performance improvement (40% to 70% faster), utilizing burst and optimized. Utilizing better sorting, distributing work in jobs and improving cache access of light data.
+- Maximum light count per fine prunned tile (opaque deferred) is now 63 instead of 23.
 
 ## [12.0.0] - 2021-01-11
 
