@@ -499,7 +499,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                 if (RequireSRGBConversionBlitToBackBuffer(cameraData))
                     m_Materials.uber.EnableKeyword(ShaderKeywordStrings.LinearToSRGBConversion);
 
-                if (cameraData.upscalingMode == UpscalingMode.FSR)
+                if ((cameraData.upscalingMode == UpscalingMode.FSR) && (cameraData.renderScale < 1.0f))
                 {
                     m_Materials.uber.EnableKeyword(ShaderKeywordStrings.FSR);
                 }
@@ -1360,17 +1360,10 @@ namespace UnityEngine.Rendering.Universal.Internal
             var material = m_Materials.finalPass;
             material.shaderKeywords = null;
 
-            // FXAA setup
-            if (cameraData.antialiasing == AntialiasingMode.FastApproximateAntialiasing)
-                material.EnableKeyword(ShaderKeywordStrings.Fxaa);
-
-            PostProcessUtils.SetSourceSize(cmd, cameraData.cameraTargetDescriptor);
-
-            SetupGrain(cameraData, material);
-            SetupDithering(cameraData, material);
-
             if (RequireSRGBConversionBlitToBackBuffer(cameraData))
                 material.EnableKeyword(ShaderKeywordStrings.LinearToSRGBConversion);
+
+            PostProcessUtils.SetSourceSize(cmd, cameraData.cameraTargetDescriptor);
 
             GetActiveDebugHandler(renderingData)?.UpdateShaderGlobalPropertiesForFinalValidationPass(cmd, ref cameraData, m_IsFinalPass);
 
@@ -1384,12 +1377,28 @@ namespace UnityEngine.Rendering.Universal.Internal
             var colorLoadAction = cameraData.isDefaultViewport ? RenderBufferLoadAction.DontCare : RenderBufferLoadAction.Load;
 
             // TODO: Make this calculated once
+            int tempFXAATextureId = Shader.PropertyToID("_TempFXAATexture");
             int finalUpscaleTextureId = Shader.PropertyToID("_FinalUpscaleTexture");
             int finalUpscaleTextureId2 = Shader.PropertyToID("_FinalUpscaleTexture2");
 
-            bool runFSR = (cameraData.upscalingMode == UpscalingMode.FSR);
-            if (runFSR)
+            bool runFsr = ((cameraData.upscalingMode == UpscalingMode.FSR) && (cameraData.renderScale < 1.0f));
+            if (runFsr)
             {
+                // If FXAA is enabled, we need to run an additional pass that performs FXAA, but no effects before we run the upscaler
+                if (cameraData.antialiasing == AntialiasingMode.FastApproximateAntialiasing)
+                {
+                    using (new ProfilingScope(cmd, ProfilingSampler.Get(URPProfileId.FXAA)))
+                    {
+                        cmd.GetTemporaryRT(tempFXAATextureId, cameraData.cameraTargetDescriptor, FilterMode.Bilinear);
+                        var fxaaTempRtId = new RenderTargetIdentifier(tempFXAATextureId, 0, CubemapFace.Unknown, -1);
+
+                        cmd.Blit(m_Source, fxaaTempRtId, m_Materials.fsr, 2);
+
+                        cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, fxaaTempRtId);
+                        m_Source = fxaaTempRtId;
+                    }
+                }
+
                 var rtDesc = cameraData.cameraTargetDescriptor;
                 rtDesc.width = cameraData.pixelWidth;
                 rtDesc.height = cameraData.pixelHeight;
@@ -1414,10 +1423,23 @@ namespace UnityEngine.Rendering.Universal.Internal
 
                     cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, destId2);
                     PostProcessUtils.SetSourceSize(cmd, rtDesc);
-
                     m_Source = destId2;
                 }
+
+                if (cameraData.antialiasing == AntialiasingMode.FastApproximateAntialiasing)
+                {
+                    cmd.ReleaseTemporaryRT(tempFXAATextureId);
+                }
             }
+            else
+            {
+                // Enable FXAA as normal if there's no upscaling
+                if (cameraData.antialiasing == AntialiasingMode.FastApproximateAntialiasing)
+                    material.EnableKeyword(ShaderKeywordStrings.Fxaa);
+            }
+
+            SetupGrain(cameraData, material);
+            SetupDithering(cameraData, material);
 
 #if ENABLE_VR && ENABLE_XR_MODULE
             if (cameraData.xr.enabled)
@@ -1456,7 +1478,7 @@ namespace UnityEngine.Rendering.Universal.Internal
 #pragma warning restore 0618
             }
 
-            if (runFSR)
+            if (runFsr)
             {
                 cmd.ReleaseTemporaryRT(finalUpscaleTextureId);
                 cmd.ReleaseTemporaryRT(finalUpscaleTextureId2);

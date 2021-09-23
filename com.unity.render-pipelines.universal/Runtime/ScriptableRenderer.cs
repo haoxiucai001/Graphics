@@ -220,6 +220,9 @@ namespace UnityEngine.Rendering.Universal
             cmd.SetGlobalVector(ShaderPropertyId.orthoParams, orthoParams);
 
             cmd.SetGlobalVector(ShaderPropertyId.screenSize, new Vector4(cameraWidth, cameraHeight, 1.0f / cameraWidth, 1.0f / cameraHeight));
+
+            float mipLodBias = (float)-Math.Log(cameraWidth / scaledCameraWidth, 2.0);
+            cmd.SetGlobalFloat(ShaderPropertyId.globalMipLodBias, mipLodBias);
         }
 
         /// <summary>
