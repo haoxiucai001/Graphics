@@ -66,7 +66,7 @@ Shader "Hidden/Universal Render Pipeline/FSR"
             float2 uv = UnityStereoTransformScreenSpaceTex(input.uv);
             uint2 integerUv = floor(uv * _ScreenParams.xy);
 
-            float3 color = SAMPLE_TEXTURE2D_X(_SourceTex, sampler_LinearClamp, uv).xyz;
+            float3 color = SAMPLE_TEXTURE2D_X(_SourceTex, sampler_PointClamp, uv).xyz;
 
             AU4 con0 = (AU4)0;
             AU4 con1 = (AU4)0;
@@ -95,7 +95,7 @@ Shader "Hidden/Universal Render Pipeline/FSR"
 //            }
 //#else
             finalColor = c;
-//            finalColor = color;
+            //finalColor = color;
 //#endif
 
             // Convert back to linear color space before this data is sent into RCAS
@@ -131,6 +131,7 @@ Shader "Hidden/Universal Render Pipeline/FSR"
 //            }
 //#else
             finalColor = c;
+            //finalColor = color;
 //#endif
 
             return half4(finalColor, 1.0);
