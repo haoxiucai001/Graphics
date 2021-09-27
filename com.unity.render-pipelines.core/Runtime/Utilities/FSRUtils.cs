@@ -7,27 +7,39 @@ namespace UnityEngine.Rendering
     /// </summary>
     public static class FSRUtils
     {
+        // Precomputed shader ids to same some CPU cycles (mostly affects mobile)
+        static class ShaderConstants
+        {
+            public static readonly int _FsrConstants0 = Shader.PropertyToID("_FsrConstants0");
+            public static readonly int _FsrConstants1 = Shader.PropertyToID("_FsrConstants1");
+            public static readonly int _FsrConstants2 = Shader.PropertyToID("_FsrConstants2");
+            public static readonly int _FsrConstants3 = Shader.PropertyToID("_FsrConstants3");
+        }
+
         /// <summary>
-        /// Calculates the constant values required by the FSR EASU shader and returns them in an array
+        /// Sets the constant values required by the FSR EASU shader on the provided command buffer
         /// </summary>
+        /// <param name="cmd">Command buffer to modify</param>
         /// <param name="inputViewportSizeInPixels">This the rendered image resolution being upscaled</param>
         /// <param name="inputImageSizeInPixels">This is the resolution of the resource containing the input image (useful for dynamic resolution)</param>
         /// <param name="outputImageSizeInPixels">This is the display resolution which the input image gets upscaled to</param>
-        public static NativeArray<uint> CalculateFsrEasuConstants(Vector2 inputViewportSizeInPixels, Vector2 inputImageSizeInPixels, Vector2 outputImageSizeInPixels)
+        public static void SetEasuConstants(CommandBuffer cmd, Vector2 inputViewportSizeInPixels, Vector2 inputImageSizeInPixels, Vector2 outputImageSizeInPixels)
         {
-            NativeArray<uint> constantsArray = new NativeArray<uint>(16, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-            NativeSlice<float> constants = new NativeSlice<uint>(constantsArray).SliceConvert<float>();
+            Vector4 constants0;
+            Vector4 constants1;
+            Vector4 constants2;
+            Vector4 constants3;
 
             // Output integer position to a pixel position in viewport.
-            constants[0] = (inputViewportSizeInPixels.x / outputImageSizeInPixels.x);
-            constants[1] = (inputViewportSizeInPixels.y / outputImageSizeInPixels.y);
-            constants[2] = (0.5f * inputViewportSizeInPixels.x / outputImageSizeInPixels.x - 0.5f);
-            constants[3] = (0.5f * inputViewportSizeInPixels.y / outputImageSizeInPixels.y - 0.5f);
+            constants0.x = (inputViewportSizeInPixels.x / outputImageSizeInPixels.x);
+            constants0.y = (inputViewportSizeInPixels.y / outputImageSizeInPixels.y);
+            constants0.z = (0.5f * inputViewportSizeInPixels.x / outputImageSizeInPixels.x - 0.5f);
+            constants0.w = (0.5f * inputViewportSizeInPixels.y / outputImageSizeInPixels.y - 0.5f);
 
             // Viewport pixel position to normalized image space.
             // This is used to get upper-left of 'F' tap.
-            constants[4] = (1.0f / inputImageSizeInPixels.x);
-            constants[5] = (1.0f / inputImageSizeInPixels.y);
+            constants1.x = (1.0f / inputImageSizeInPixels.x);
+            constants1.y = (1.0f / inputImageSizeInPixels.y);
 
             // Centers of gather4, first offset from upper-left of 'F'.
             //      +---+---+
@@ -43,43 +55,52 @@ namespace UnityEngine.Rendering
             //      +--(3)--+
             //      |   |   |
             //      +---+---+
-            constants[6] = (1.0f / inputImageSizeInPixels.x);
-            constants[7] = (-1.0f / inputImageSizeInPixels.y);
+            constants1.z = (1.0f / inputImageSizeInPixels.x);
+            constants1.w = (-1.0f / inputImageSizeInPixels.y);
 
             // These are from (0) instead of 'F'.
-            constants[8]  = (-1.0f / inputImageSizeInPixels.x);
-            constants[9]  = (2.0f / inputImageSizeInPixels.y);
-            constants[10] = (1.0f / inputImageSizeInPixels.x);
-            constants[11] = (2.0f / inputImageSizeInPixels.y);
-            constants[12] = (0.0f / inputImageSizeInPixels.x);
-            constants[13] = (4.0f / inputImageSizeInPixels.y);
+            constants2.x  = (-1.0f / inputImageSizeInPixels.x);
+            constants2.y  = (2.0f / inputImageSizeInPixels.y);
+            constants2.z = (1.0f / inputImageSizeInPixels.x);
+            constants2.w = (2.0f / inputImageSizeInPixels.y);
 
-            // We just write 0.0f to initialize the memory to zero here since float zero and uint zero share the same bit pattern
-            constants[14] = 0.0f;
-            constants[15] = 0.0f;
+            constants3.x = (0.0f / inputImageSizeInPixels.x);
+            constants3.y = (4.0f / inputImageSizeInPixels.y);
 
-            return constantsArray;
+            // Fill the last constant with zeros to avoid using uninitialized memory
+            constants3.z = 0.0f;
+            constants3.w = 0.0f;
+
+            cmd.SetGlobalVector(ShaderConstants._FsrConstants0, constants0);
+            cmd.SetGlobalVector(ShaderConstants._FsrConstants1, constants1);
+            cmd.SetGlobalVector(ShaderConstants._FsrConstants2, constants2);
+            cmd.SetGlobalVector(ShaderConstants._FsrConstants3, constants3);
         }
 
-
         /// <summary>
-        /// Calculates the constant values required by the FSR RCAS shader and returns them in an array
+        /// Sets the constant values required by the FSR RCAS shader on the provided command buffer
         /// </summary>
+        /// <param name="cmd">Command buffer to modify</param>
         /// <param name="sharpness">The scale is {0.0 := maximum, to N>0, where N is the number of stops(halving) of the reduction of sharpness</param>
-        public static NativeArray<uint> CalculateFsrRcasConstants(float sharpness)
+        public static void SetRcasConstants(CommandBuffer cmd, float sharpness = 0.2f)
         {
-            NativeArray<uint> constantsArray = new NativeArray<uint>(4, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-            NativeSlice<uint> constants = new NativeSlice<uint>(constantsArray);
+            Vector4 constants0;
+
+            // We use a temporary native array to pack two half floats into a single float before sending it to the shader
+            NativeArray<float> floatVal = new NativeArray<float>(1, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+            floatVal.ReinterpretStore<uint>(0, ((uint)Mathf.FloatToHalf(sharpness)) | ((uint)(Mathf.FloatToHalf(sharpness) << 16)));
 
             // Transform from stops to linear value.
             sharpness = Mathf.Pow(2.0f, -sharpness);
 
-            constantsArray.ReinterpretStore<float>(0, sharpness);
-            constants[1] = ((uint)Mathf.FloatToHalf(sharpness)) | ((uint)(Mathf.FloatToHalf(sharpness) << 16));
-            constants[2] = 0;
-            constants[3] = 0;
+            constants0.x = sharpness;
+            constants0.y = floatVal[0];
 
-            return constantsArray;
+            // Fill the last constant with zeros to avoid using uninitialized memory
+            constants0.z = 0.0f;
+            constants0.w = 0.0f;
+
+            cmd.SetGlobalVector(ShaderConstants._FsrConstants0, constants0);
         }
     }
 }

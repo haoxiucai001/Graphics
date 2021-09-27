@@ -20,14 +20,21 @@ Shader "Hidden/Universal Render Pipeline/FSR"
 
         #include "Packages/com.unity.render-pipelines.core/Runtime/PostProcessing/Shaders/ffx/ffx_fsr1.hlsl"
 
-        #define COMPARE_ENABLED true
-        #define COMPARE_XPOS 0.49
-
         #define FXAA_SPAN_MAX           (8.0)
         #define FXAA_REDUCE_MUL         (1.0 / 8.0)
         #define FXAA_REDUCE_MIN         (1.0 / 128.0)
 
         TEXTURE2D_X(_SourceTex);
+
+        float4 _FsrConstants0;
+        float4 _FsrConstants1;
+        float4 _FsrConstants2;
+        float4 _FsrConstants3;
+
+        #define FSR_CONSTANTS_0 asuint(_FsrConstants0)
+        #define FSR_CONSTANTS_1 asuint(_FsrConstants1)
+        #define FSR_CONSTANTS_2 asuint(_FsrConstants2)
+        #define FSR_CONSTANTS_3 asuint(_FsrConstants3)
 
         float4 _SourceSize;
 
@@ -64,44 +71,17 @@ Shader "Hidden/Universal Render Pipeline/FSR"
             UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
 
             float2 uv = UnityStereoTransformScreenSpaceTex(input.uv);
-            uint2 integerUv = floor(uv * _ScreenParams.xy);
-
-            float3 color = SAMPLE_TEXTURE2D_X(_SourceTex, sampler_PointClamp, uv).xyz;
-
-            AU4 con0 = (AU4)0;
-            AU4 con1 = (AU4)0;
-            AU4 con2 = (AU4)0;
-            AU4 con3 = (AU4)0;
-
-            FsrEasuCon(con0, con1, con2, con3,
-                floor(_ScaledScreenParams.x), floor(_ScaledScreenParams.y), // Input viewport size
-                floor(_ScaledScreenParams.x), floor(_ScaledScreenParams.y), // Size of input image (This may be larger than the input viewport in some cases)
-                _ScreenParams.x, _ScreenParams.y);            // Size of output image
+            uint2 integerUv = uv * _ScreenParams.xy;
 
             // Note: The input data for EASU should always be in gamma2.0 color space from the previous pass
 
-            AF3 c;
-            FsrEasuF(c, integerUv, con0, con1, con2, con3);
-
-            float3 finalColor = float3(0.0, 0.0, 0.0);
-
-//#if COMPARE_ENABLED
-//            const float pixelSize = (_ScreenParams.z - 1.0);
-//            const float pixelBarDist = (pixelSize * 2.0) + (pixelSize * 0.5);
-//            const float xPos = COMPARE_XPOS;//fmod(_Time.x, 1.0);
-//            if (abs(xPos - uv.x) > pixelBarDist)
-//            {
-//                finalColor = uv.x < xPos ? c : color;
-//            }
-//#else
-            finalColor = c;
-            //finalColor = color;
-//#endif
+            AF3 color;
+            FsrEasuF(color, integerUv, FSR_CONSTANTS_0, FSR_CONSTANTS_1, FSR_CONSTANTS_2, FSR_CONSTANTS_3);
 
             // Convert back to linear color space before this data is sent into RCAS
-            finalColor = Gamma20ToLinear(finalColor);
+            color = Gamma20ToLinear(color);
 
-            return half4(finalColor, 1.0);
+            return half4(color, 1.0);
         }
 
         half4 FragRCAS(Varyings input) : SV_Target
@@ -109,32 +89,12 @@ Shader "Hidden/Universal Render Pipeline/FSR"
             UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
 
             float2 uv = UnityStereoTransformScreenSpaceTex(input.uv);
-            uint2 integerUv = floor(uv * _ScreenParams.xy);
+            uint2 integerUv = uv * _ScreenParams.xy;
 
-            float3 color = SAMPLE_TEXTURE2D_X(_SourceTex, sampler_PointClamp, uv).xyz;
+            AF3 color;
+            FsrRcasF(color.r, color.g, color.b, integerUv, FSR_CONSTANTS_0);
 
-            AU4 con = (AU4)0;
-            FsrRcasCon(con, 0.2);
-
-            AF3 c;
-            FsrRcasF(c.r, c.g, c.b, integerUv, con);
-
-            float3 finalColor = float3(0.0, 0.0, 0.0);
-
-//#if COMPARE_ENABLED
-//            const float pixelSize = (_ScreenParams.z - 1.0);
-//            const float pixelBarDist = (pixelSize * 2.0) + (pixelSize * 0.5);
-//            const float xPos = COMPARE_XPOS;//fmod(_Time.x, 1.0);
-//            if (abs(xPos - uv.x) > pixelBarDist)
-//            {
-//                finalColor = uv.x < xPos ? c : color;
-//            }
-//#else
-            finalColor = c;
-            //finalColor = color;
-//#endif
-
-            return half4(finalColor, 1.0);
+            return half4(color, 1.0);
         }
 
         half4 FragFXAA(Varyings input) : SV_Target

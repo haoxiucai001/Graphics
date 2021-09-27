@@ -1416,9 +1416,17 @@ namespace UnityEngine.Rendering.Universal.Internal
                     RenderTargetIdentifier cameraTarget = (cameraData.targetTexture != null) ? new RenderTargetIdentifier(cameraData.targetTexture) : cameraTargetHandle.Identifier();
                     cmd.SetRenderTarget(cameraTarget, colorLoadAction, RenderBufferStoreAction.Store, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.DontCare);
                     cmd.SetViewport(cameraData.pixelRect);
+
+                    // EASU
+                    var fsrInputSize = new Vector2(cameraData.cameraTargetDescriptor.width, cameraData.cameraTargetDescriptor.height);
+                    var fsrOutputSize = new Vector2(cameraData.pixelWidth, cameraData.pixelHeight);
+                    FSRUtils.SetEasuConstants(cmd, fsrInputSize, fsrInputSize, fsrOutputSize);
                     cmd.Blit(m_Source, destId, m_Materials.fsr, 0);
 
                     cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, destId);
+
+                    // RCAS
+                    FSRUtils.SetRcasConstants(cmd);
                     cmd.Blit(destId, destId2, m_Materials.fsr, 1);
 
                     cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, destId2);
