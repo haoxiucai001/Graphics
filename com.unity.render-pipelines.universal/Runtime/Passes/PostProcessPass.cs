@@ -1417,6 +1417,8 @@ namespace UnityEngine.Rendering.Universal.Internal
                     cmd.SetRenderTarget(cameraTarget, colorLoadAction, RenderBufferStoreAction.Store, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.DontCare);
                     cmd.SetViewport(cameraData.pixelRect);
 
+                    m_Materials.fsr.EnableKeyword("_USE_16BIT");
+
                     // EASU
                     var fsrInputSize = new Vector2(cameraData.cameraTargetDescriptor.width, cameraData.cameraTargetDescriptor.height);
                     var fsrOutputSize = new Vector2(cameraData.pixelWidth, cameraData.pixelHeight);
