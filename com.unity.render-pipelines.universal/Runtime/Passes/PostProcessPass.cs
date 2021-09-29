@@ -1377,75 +1377,94 @@ namespace UnityEngine.Rendering.Universal.Internal
             var colorLoadAction = cameraData.isDefaultViewport ? RenderBufferLoadAction.DontCare : RenderBufferLoadAction.Load;
 
             // TODO: Make this calculated once
-            int tempFXAATextureId = Shader.PropertyToID("_TempFXAATexture");
+            int tempSetupTextureId = Shader.PropertyToID("_TempSetupTexture");
             int finalUpscaleTextureId = Shader.PropertyToID("_FinalUpscaleTexture");
             int finalUpscaleTextureId2 = Shader.PropertyToID("_FinalUpscaleTexture2");
 
-            bool runFsr = ((cameraData.upscalingMode == UpscalingMode.FSR) && (cameraData.renderScale < 1.0f));
-            if (runFsr)
+            bool isUpscaling = (cameraData.renderScale < 1.0f);
+            bool upscaleTexturesUsed = false;
+            bool fxaaHandled = false;
+
+            if (isUpscaling)
             {
-                // If FXAA is enabled, we need to run an additional pass that performs FXAA, but no effects before we run the upscaler
-                if (cameraData.antialiasing == AntialiasingMode.FastApproximateAntialiasing)
+                switch (cameraData.upscalingMode)
                 {
-                    using (new ProfilingScope(cmd, ProfilingSampler.Get(URPProfileId.FXAA)))
+                    case UpscalingMode.Integer:
                     {
-                        cmd.GetTemporaryRT(tempFXAATextureId, cameraData.cameraTargetDescriptor, FilterMode.Bilinear);
-                        var fxaaTempRtId = new RenderTargetIdentifier(tempFXAATextureId, 0, CubemapFace.Unknown, -1);
+                        material.EnableKeyword("_POINT_SAMPLING");
+                        break;
+                    }
+                    case UpscalingMode.FSR:
+                    {
+                        // The FSR implementation always requires intermediate upscaling textures
+                        upscaleTexturesUsed = true;
 
-                        cmd.Blit(m_Source, fxaaTempRtId, m_Materials.fsr, 2);
+                        // The FSR implementation moves FXAA earlier in the post processing pipeline since all AA should be peformed before running FSR
+                        fxaaHandled = true;
 
-                        cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, fxaaTempRtId);
-                        m_Source = fxaaTempRtId;
+                        var rtDesc = cameraData.cameraTargetDescriptor;
+                        rtDesc.width = cameraData.pixelWidth;
+                        rtDesc.height = cameraData.pixelHeight;
+                        rtDesc.msaaSamples = 1;
+                        rtDesc.depthBufferBits = 0;
+
+                        cmd.GetTemporaryRT(tempSetupTextureId, cameraData.cameraTargetDescriptor, FilterMode.Bilinear);
+                        var tempSetupRtId = new RenderTargetIdentifier(tempSetupTextureId, 0, CubemapFace.Unknown, -1);
+
+                        cmd.GetTemporaryRT(finalUpscaleTextureId, rtDesc, FilterMode.Bilinear);
+                        var destId = new RenderTargetIdentifier(finalUpscaleTextureId, 0, CubemapFace.Unknown, -1);
+
+                        cmd.GetTemporaryRT(finalUpscaleTextureId2, rtDesc, FilterMode.Bilinear);
+                        var destId2 = new RenderTargetIdentifier(finalUpscaleTextureId2, 0, CubemapFace.Unknown, -1);
+
+                        using (new ProfilingScope(cmd, ProfilingSampler.Get(URPProfileId.FSR)))
+                        {
+                            RenderTargetIdentifier cameraTarget = (cameraData.targetTexture != null) ? new RenderTargetIdentifier(cameraData.targetTexture) : cameraTargetHandle.Identifier();
+                            cmd.SetRenderTarget(cameraTarget, colorLoadAction, RenderBufferStoreAction.Store, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.DontCare);
+                            cmd.SetViewport(cameraData.pixelRect);
+
+                            m_Materials.fsr.shaderKeywords = null;
+
+                            // FXAA is performed during the setup pass when FSR is enabled
+                            if (cameraData.antialiasing == AntialiasingMode.FastApproximateAntialiasing)
+                            {
+                                m_Materials.fsr.EnableKeyword("_FXAA");
+                            }
+
+                            //m_Materials.fsr.EnableKeyword("_USE_16BIT");
+
+                            // Setup
+                            cmd.Blit(m_Source, tempSetupRtId, m_Materials.fsr, 0);
+
+                            cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, tempSetupRtId);
+                            m_Source = tempSetupRtId;
+
+                            // EASU
+                            var fsrInputSize = new Vector2(cameraData.cameraTargetDescriptor.width, cameraData.cameraTargetDescriptor.height);
+                            var fsrOutputSize = new Vector2(cameraData.pixelWidth, cameraData.pixelHeight);
+                            FSRUtils.SetEasuConstants(cmd, fsrInputSize, fsrInputSize, fsrOutputSize);
+                            cmd.Blit(m_Source, destId, m_Materials.fsr, 1);
+
+                            cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, destId);
+
+                            // RCAS
+                            FSRUtils.SetRcasConstants(cmd);
+                            cmd.Blit(destId, destId2, m_Materials.fsr, 2);
+
+                            cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, destId2);
+                            PostProcessUtils.SetSourceSize(cmd, rtDesc);
+                            m_Source = destId2;
+                        }
+
+                        break;
                     }
                 }
-
-                var rtDesc = cameraData.cameraTargetDescriptor;
-                rtDesc.width = cameraData.pixelWidth;
-                rtDesc.height = cameraData.pixelHeight;
-                rtDesc.msaaSamples = 1;
-                rtDesc.depthBufferBits = 0;
-
-                cmd.GetTemporaryRT(finalUpscaleTextureId, rtDesc, FilterMode.Bilinear);
-                var destId = new RenderTargetIdentifier(finalUpscaleTextureId, 0, CubemapFace.Unknown, -1);
-
-                cmd.GetTemporaryRT(finalUpscaleTextureId2, rtDesc, FilterMode.Bilinear);
-                var destId2 = new RenderTargetIdentifier(finalUpscaleTextureId2, 0, CubemapFace.Unknown, -1);
-
-                using (new ProfilingScope(cmd, ProfilingSampler.Get(URPProfileId.FSR)))
-                {
-                    RenderTargetIdentifier cameraTarget = (cameraData.targetTexture != null) ? new RenderTargetIdentifier(cameraData.targetTexture) : cameraTargetHandle.Identifier();
-                    cmd.SetRenderTarget(cameraTarget, colorLoadAction, RenderBufferStoreAction.Store, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.DontCare);
-                    cmd.SetViewport(cameraData.pixelRect);
-
-                    m_Materials.fsr.EnableKeyword("_USE_16BIT");
-
-                    // EASU
-                    var fsrInputSize = new Vector2(cameraData.cameraTargetDescriptor.width, cameraData.cameraTargetDescriptor.height);
-                    var fsrOutputSize = new Vector2(cameraData.pixelWidth, cameraData.pixelHeight);
-                    FSRUtils.SetEasuConstants(cmd, fsrInputSize, fsrInputSize, fsrOutputSize);
-                    cmd.Blit(m_Source, destId, m_Materials.fsr, 0);
-
-                    cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, destId);
-
-                    // RCAS
-                    FSRUtils.SetRcasConstants(cmd);
-                    cmd.Blit(destId, destId2, m_Materials.fsr, 1);
-
-                    cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, destId2);
-                    PostProcessUtils.SetSourceSize(cmd, rtDesc);
-                    m_Source = destId2;
-                }
-
-                if (cameraData.antialiasing == AntialiasingMode.FastApproximateAntialiasing)
-                {
-                    cmd.ReleaseTemporaryRT(tempFXAATextureId);
-                }
             }
-            else
+
+            // Enable FXAA in the final pass if it hasn't already been handled
+            if ((cameraData.antialiasing == AntialiasingMode.FastApproximateAntialiasing) && !fxaaHandled)
             {
-                // Enable FXAA as normal if there's no upscaling
-                if (cameraData.antialiasing == AntialiasingMode.FastApproximateAntialiasing)
-                    material.EnableKeyword(ShaderKeywordStrings.Fxaa);
+                material.EnableKeyword(ShaderKeywordStrings.Fxaa);
             }
 
             SetupGrain(cameraData, material);
@@ -1488,10 +1507,11 @@ namespace UnityEngine.Rendering.Universal.Internal
 #pragma warning restore 0618
             }
 
-            if (runFsr)
+            if (upscaleTexturesUsed)
             {
                 cmd.ReleaseTemporaryRT(finalUpscaleTextureId);
                 cmd.ReleaseTemporaryRT(finalUpscaleTextureId2);
+                cmd.ReleaseTemporaryRT(tempSetupTextureId);
             }
         }
 

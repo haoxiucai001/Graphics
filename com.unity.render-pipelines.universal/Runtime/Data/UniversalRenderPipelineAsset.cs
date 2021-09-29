@@ -143,6 +143,7 @@ namespace UnityEngine.Rendering.Universal
     public enum UpscalingMode
     {
         Bilinear,
+        Integer,
         [InspectorName("FidelityFX Super Resolution")]
         FSR
     }
