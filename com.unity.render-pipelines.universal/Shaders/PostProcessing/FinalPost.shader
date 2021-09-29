@@ -2,6 +2,8 @@ Shader "Hidden/Universal Render Pipeline/FinalPost"
 {
     HLSLINCLUDE
         #pragma exclude_renderers gles
+        #pragma multi_compile_local_fragment _ _USE_16BIT
+        #pragma multi_compile_local_fragment _ _FSR
         #pragma multi_compile_local_fragment _ _POINT_SAMPLING
         #pragma multi_compile_local_fragment _ _FXAA
         #pragma multi_compile_local_fragment _ _FILM_GRAIN
@@ -25,6 +27,20 @@ Shader "Hidden/Universal Render Pipeline/FinalPost"
         float4 _Grain_TilingParams;
         float4 _Dithering_Params;
 
+        float4 _FsrConstants0;
+        float4 _FsrConstants1;
+        float4 _FsrConstants2;
+        float4 _FsrConstants3;
+
+        #define FSR_CONSTANTS_0 asuint(_FsrConstants0)
+        #define FSR_CONSTANTS_1 asuint(_FsrConstants1)
+        #define FSR_CONSTANTS_2 asuint(_FsrConstants2)
+        #define FSR_CONSTANTS_3 asuint(_FsrConstants3)
+        #define FSR_INPUT_TEXTURE _SourceTex
+        #define FSR_INPUT_SAMPLER sampler_LinearClamp
+
+        #include "Packages/com.unity.render-pipelines.core/Runtime/PostProcessing/Shaders/FSRCommon.hlsl"
+
         #define GrainIntensity          _Grain_Params.x
         #define GrainResponse           _Grain_Params.y
         #define GrainScale              _Grain_TilingParams.xy
@@ -41,6 +57,9 @@ Shader "Hidden/Universal Render Pipeline/FinalPost"
             float2 positionNDC = uv;
             int2   positionSS  = uv * _SourceSize.xy;
 
+            #if _FSR
+            half3 color = ApplyRCAS(positionSS);
+            #else
             #if _POINT_SAMPLING
             sampler inputSampler = sampler_PointClamp;
             #else
@@ -49,10 +68,12 @@ Shader "Hidden/Universal Render Pipeline/FinalPost"
 
             half3 color = SAMPLE_TEXTURE2D_X(_SourceTex, inputSampler, uv).xyz;
 
+            // FXAA is always applied in an earlier pass when FSR is enabled
             #if _FXAA
             {
                 color = ApplyFXAA(color, positionNDC, positionSS, _SourceSize, TEXTURE2D_ARGS(_SourceTex, sampler_LinearClamp));
             }
+            #endif
             #endif
 
             #if _FILM_GRAIN

@@ -1379,7 +1379,6 @@ namespace UnityEngine.Rendering.Universal.Internal
             // TODO: Make this calculated once
             int tempSetupTextureId = Shader.PropertyToID("_TempSetupTexture");
             int finalUpscaleTextureId = Shader.PropertyToID("_FinalUpscaleTexture");
-            int finalUpscaleTextureId2 = Shader.PropertyToID("_FinalUpscaleTexture2");
 
             bool isUpscaling = (cameraData.renderScale < 1.0f);
             bool upscaleTexturesUsed = false;
@@ -1412,10 +1411,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                         var tempSetupRtId = new RenderTargetIdentifier(tempSetupTextureId, 0, CubemapFace.Unknown, -1);
 
                         cmd.GetTemporaryRT(finalUpscaleTextureId, rtDesc, FilterMode.Bilinear);
-                        var destId = new RenderTargetIdentifier(finalUpscaleTextureId, 0, CubemapFace.Unknown, -1);
-
-                        cmd.GetTemporaryRT(finalUpscaleTextureId2, rtDesc, FilterMode.Bilinear);
-                        var destId2 = new RenderTargetIdentifier(finalUpscaleTextureId2, 0, CubemapFace.Unknown, -1);
+                        var finalUpscaleRtId = new RenderTargetIdentifier(finalUpscaleTextureId, 0, CubemapFace.Unknown, -1);
 
                         using (new ProfilingScope(cmd, ProfilingSampler.Get(URPProfileId.FSR)))
                         {
@@ -1431,7 +1427,8 @@ namespace UnityEngine.Rendering.Universal.Internal
                                 m_Materials.fsr.EnableKeyword("_FXAA");
                             }
 
-                            //m_Materials.fsr.EnableKeyword("_USE_16BIT");
+                            m_Materials.fsr.EnableKeyword("_USE_16BIT");
+                            material.EnableKeyword("_USE_16BIT");
 
                             // Setup
                             cmd.Blit(m_Source, tempSetupRtId, m_Materials.fsr, 0);
@@ -1443,17 +1440,15 @@ namespace UnityEngine.Rendering.Universal.Internal
                             var fsrInputSize = new Vector2(cameraData.cameraTargetDescriptor.width, cameraData.cameraTargetDescriptor.height);
                             var fsrOutputSize = new Vector2(cameraData.pixelWidth, cameraData.pixelHeight);
                             FSRUtils.SetEasuConstants(cmd, fsrInputSize, fsrInputSize, fsrOutputSize);
-                            cmd.Blit(m_Source, destId, m_Materials.fsr, 1);
+                            cmd.Blit(m_Source, finalUpscaleRtId, m_Materials.fsr, 1);
 
-                            cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, destId);
+                            cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, finalUpscaleRtId);
 
                             // RCAS
+                            material.EnableKeyword("_FSR");
                             FSRUtils.SetRcasConstants(cmd);
-                            cmd.Blit(destId, destId2, m_Materials.fsr, 2);
-
-                            cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, destId2);
                             PostProcessUtils.SetSourceSize(cmd, rtDesc);
-                            m_Source = destId2;
+                            m_Source = finalUpscaleRtId;
                         }
 
                         break;
@@ -1510,7 +1505,6 @@ namespace UnityEngine.Rendering.Universal.Internal
             if (upscaleTexturesUsed)
             {
                 cmd.ReleaseTemporaryRT(finalUpscaleTextureId);
-                cmd.ReleaseTemporaryRT(finalUpscaleTextureId2);
                 cmd.ReleaseTemporaryRT(tempSetupTextureId);
             }
         }
