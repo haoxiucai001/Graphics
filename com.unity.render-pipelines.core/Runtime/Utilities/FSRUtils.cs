@@ -84,14 +84,14 @@ namespace UnityEngine.Rendering
         /// <param name="sharpness">The scale is {0.0 := maximum, to N>0, where N is the number of stops(halving) of the reduction of sharpness</param>
         public static void SetRcasConstants(CommandBuffer cmd, float sharpness = 0.2f)
         {
+            // Transform from stops to linear value.
+            sharpness = Mathf.Pow(2.0f, -sharpness);
+
             Vector4 constants0;
 
             // We use a temporary native array to pack two half floats into a single float before sending it to the shader
             NativeArray<float> floatVal = new NativeArray<float>(1, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             floatVal.ReinterpretStore<uint>(0, ((uint)Mathf.FloatToHalf(sharpness)) | ((uint)(Mathf.FloatToHalf(sharpness) << 16)));
-
-            // Transform from stops to linear value.
-            sharpness = Mathf.Pow(2.0f, -sharpness);
 
             constants0.x = sharpness;
             constants0.y = floatVal[0];
