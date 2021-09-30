@@ -87,6 +87,9 @@ namespace UnityEngine.Rendering.Universal.Internal
         // Renderer is using swapbuffer system
         bool m_UseSwapBuffer;
 
+        // True if there are passes that will run after post processing logic
+        bool m_hasUserPostProcessingPasses;
+
         Material m_BlitMaterial;
 
         public PostProcessPass(RenderPassEvent evt, PostProcessData data, Material blitMaterial)
@@ -142,7 +145,7 @@ namespace UnityEngine.Rendering.Universal.Internal
 
         public void Cleanup() => m_Materials.Cleanup();
 
-        public void Setup(in RenderTextureDescriptor baseDescriptor, in RTHandle source, bool resolveToScreen, in RTHandle depth, in RTHandle internalLut, bool hasFinalPass, bool enableSRGBConversion)
+        public void Setup(in RenderTextureDescriptor baseDescriptor, in RTHandle source, bool resolveToScreen, in RTHandle depth, in RTHandle internalLut, bool hasFinalPass, bool enableSRGBConversion, bool hasPassesAfter)
         {
             m_Descriptor = baseDescriptor;
             m_Descriptor.useMipMap = false;
@@ -156,6 +159,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             m_ResolveToScreen = resolveToScreen;
             m_Destination = k_CameraTarget;
             m_UseSwapBuffer = true;
+            m_hasUserPostProcessingPasses = hasPassesAfter;
         }
 
         public void Setup(in RenderTextureDescriptor baseDescriptor, in RTHandle source, RTHandle destination, in RTHandle depth, in RTHandle internalLut, bool hasFinalPass, bool enableSRGBConversion)
@@ -171,9 +175,10 @@ namespace UnityEngine.Rendering.Universal.Internal
             m_HasFinalPass = hasFinalPass;
             m_EnableSRGBConversionIfNeeded = enableSRGBConversion;
             m_UseSwapBuffer = false;
+            m_hasUserPostProcessingPasses = false; // TODO: This probably needs to be passed through too
         }
 
-        public void SetupFinalPass(in RTHandle source, bool useSwapBuffer = false)
+        public void SetupFinalPass(in RTHandle source, bool useSwapBuffer = false, bool hasPassesBefore = true)
         {
             m_Source = source;
             m_Destination = k_CameraTarget;
@@ -181,6 +186,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             m_HasFinalPass = false;
             m_EnableSRGBConversionIfNeeded = true;
             m_UseSwapBuffer = useSwapBuffer;
+            m_hasUserPostProcessingPasses = hasPassesBefore;
         }
 
         /// <inheritdoc/>
@@ -499,7 +505,13 @@ namespace UnityEngine.Rendering.Universal.Internal
                 if (RequireSRGBConversionBlitToBackBuffer(cameraData))
                     m_Materials.uber.EnableKeyword(ShaderKeywordStrings.LinearToSRGBConversion);
 
-                if ((cameraData.upscalingMode == UpscalingMode.FSR) && (cameraData.renderScale < 1.0f))
+                // When we're running FSR upscaling and there's no passes after this (including the FXAA pass), we can safely perform color conversion as part of uber post
+                bool doEarlyFsrColorConversion =
+                    (cameraData.upscalingMode == UpscalingMode.FSR) &&
+                    (cameraData.renderScale < 1.0f)                 &&
+                    !m_hasUserPostProcessingPasses                               &&
+                    (cameraData.antialiasing != AntialiasingMode.FastApproximateAntialiasing);
+                if (doEarlyFsrColorConversion)
                 {
                     m_Materials.uber.EnableKeyword(ShaderKeywordStrings.FSR);
                 }
@@ -1407,11 +1419,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                         rtDesc.msaaSamples = 1;
                         rtDesc.depthBufferBits = 0;
 
-                        cmd.GetTemporaryRT(tempSetupTextureId, cameraData.cameraTargetDescriptor, FilterMode.Bilinear);
-                        var tempSetupRtId = new RenderTargetIdentifier(tempSetupTextureId, 0, CubemapFace.Unknown, -1);
-
-                        cmd.GetTemporaryRT(finalUpscaleTextureId, rtDesc, FilterMode.Bilinear);
-                        var finalUpscaleRtId = new RenderTargetIdentifier(finalUpscaleTextureId, 0, CubemapFace.Unknown, -1);
+                        bool doSetupPass = m_hasUserPostProcessingPasses || (cameraData.antialiasing == AntialiasingMode.FastApproximateAntialiasing);
 
                         using (new ProfilingScope(cmd, ProfilingSampler.Get(URPProfileId.FSR)))
                         {
@@ -1430,13 +1438,20 @@ namespace UnityEngine.Rendering.Universal.Internal
                             m_Materials.fsr.EnableKeyword("_USE_16BIT");
                             material.EnableKeyword("_USE_16BIT");
 
-                            // Setup
-                            cmd.Blit(m_Source, tempSetupRtId, m_Materials.fsr, 0);
+                            if (doSetupPass)
+                            {
+                                // Setup
+                                cmd.GetTemporaryRT(tempSetupTextureId, cameraData.cameraTargetDescriptor, FilterMode.Bilinear);
+                                var tempSetupRtId = new RenderTargetIdentifier(tempSetupTextureId, 0, CubemapFace.Unknown, -1);
+                                cmd.Blit(m_Source, tempSetupRtId, m_Materials.fsr, 0);
 
-                            cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, tempSetupRtId);
-                            m_Source = tempSetupRtId;
+                                cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, tempSetupRtId);
+                                m_Source = tempSetupRtId;
+                            }
 
                             // EASU
+                            cmd.GetTemporaryRT(finalUpscaleTextureId, rtDesc, FilterMode.Bilinear);
+                            var finalUpscaleRtId = new RenderTargetIdentifier(finalUpscaleTextureId, 0, CubemapFace.Unknown, -1);
                             var fsrInputSize = new Vector2(cameraData.cameraTargetDescriptor.width, cameraData.cameraTargetDescriptor.height);
                             var fsrOutputSize = new Vector2(cameraData.pixelWidth, cameraData.pixelHeight);
                             FSRUtils.SetEasuConstants(cmd, fsrInputSize, fsrInputSize, fsrOutputSize);
@@ -1445,6 +1460,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                             cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, finalUpscaleRtId);
 
                             // RCAS
+                            // RCAS is performed during the final post blit but we set up the parameters here
                             material.EnableKeyword("_FSR");
                             FSRUtils.SetRcasConstants(cmd);
                             PostProcessUtils.SetSourceSize(cmd, rtDesc);

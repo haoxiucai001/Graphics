@@ -2,6 +2,7 @@ Shader "Hidden/Universal Render Pipeline/UberPost"
 {
     HLSLINCLUDE
         #pragma exclude_renderers gles
+        #pragma multi_compile_local_fragment _ _FSR
         #pragma multi_compile_local_fragment _ _DISTORTION
         #pragma multi_compile_local_fragment _ _CHROMATIC_ABERRATION
         #pragma multi_compile_local_fragment _ _BLOOM_LQ _BLOOM_HQ _BLOOM_LQ_DIRT _BLOOM_HQ_DIRT
@@ -205,8 +206,13 @@ Shader "Hidden/Universal Render Pipeline/UberPost"
             }
             #endif
 
+            #if _FSR
+            {
+                // EASU expects the input image to be in gamma 2.0 color space
+                color = LinearToGamma20(color);
+            }
             // Back to sRGB
-            #if UNITY_COLORSPACE_GAMMA || _LINEAR_TO_SRGB_CONVERSION
+            #elif UNITY_COLORSPACE_GAMMA || _LINEAR_TO_SRGB_CONVERSION
             {
                 color = GetLinearToSRGB(color);
             }
