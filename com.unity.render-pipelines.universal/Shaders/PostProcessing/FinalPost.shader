@@ -61,12 +61,10 @@ Shader "Hidden/Universal Render Pipeline/FinalPost"
             half3 color = ApplyRCAS(positionSS);
             #else
             #if _POINT_SAMPLING
-            sampler inputSampler = sampler_PointClamp;
+            half3 color = SAMPLE_TEXTURE2D_X(_SourceTex, sampler_PointClamp, uv).xyz;
             #else
-            sampler inputSampler = sampler_LinearClamp;
+            half3 color = SAMPLE_TEXTURE2D_X(_SourceTex, sampler_LinearClamp, uv).xyz;
             #endif
-
-            half3 color = SAMPLE_TEXTURE2D_X(_SourceTex, inputSampler, uv).xyz;
 
             // FXAA is always applied in an earlier pass when FSR is enabled
             #if _FXAA
