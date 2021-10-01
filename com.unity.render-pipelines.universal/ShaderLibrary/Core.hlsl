@@ -103,11 +103,73 @@
     #define GATHER_BLUE_TEXTURE2D_X(textureName, samplerName, coord2)       GATHER_BLUE_TEXTURE2D(textureName, samplerName, coord2)
 #endif
 
-// Ultra Quality -> -0.38
-// Quality       -> -0.58
-// Balanced      -> -0.79
-// Performance   -> -1.0
-#define SAMPLE_TEXTURE2D(textureName, samplerName, coord2)                  SAMPLE_TEXTURE2D_BIAS(textureName, samplerName, coord2, _GlobalMipLodBias)
+//simple 2d textures bias manipulation
+#ifdef PLATFORM_SAMPLE_TEXTURE2D_BIAS
+    #ifdef  SAMPLE_TEXTURE2D
+        #undef  SAMPLE_TEXTURE2D
+        #define SAMPLE_TEXTURE2D(textureName, samplerName, coord2) \
+            PLATFORM_SAMPLE_TEXTURE2D_BIAS(textureName, samplerName, coord2,  _GlobalMipBias)
+    #endif
+    #ifdef  SAMPLE_TEXTURE2D_BIAS
+        #undef  SAMPLE_TEXTURE2D_BIAS
+        #define SAMPLE_TEXTURE2D_BIAS(textureName, samplerName, coord2, bias) \
+            PLATFORM_SAMPLE_TEXTURE2D_BIAS(textureName, samplerName, coord2,  (bias + _GlobalMipBias))
+    #endif
+#endif
+
+#ifdef PLATFORM_SAMPLE_TEXTURE2D_GRAD
+    #ifdef  SAMPLE_TEXTURE2D_GRAD
+        #undef  SAMPLE_TEXTURE2D_GRAD
+        #define SAMPLE_TEXTURE2D_GRAD(textureName, samplerName, coord2, dpdx, dpdy) \
+            PLATFORM_SAMPLE_TEXTURE2D_GRAD(textureName, samplerName, coord2, (dpdx * _GlobalMipBiasPow2), (dpdy * _GlobalMipBiasPow2))
+    #endif
+#endif
+
+//2d texture arrays bias manipulation
+#ifdef PLATFORM_SAMPLE_TEXTURE2D_ARRAY_BIAS
+    #ifdef  SAMPLE_TEXTURE2D_ARRAY
+        #undef  SAMPLE_TEXTURE2D_ARRAY
+        #define SAMPLE_TEXTURE2D_ARRAY(textureName, samplerName, coord2, index) \
+            PLATFORM_SAMPLE_TEXTURE2D_ARRAY_BIAS(textureName, samplerName, coord2, index, _GlobalMipBias)
+    #endif
+    #ifdef  SAMPLE_TEXTURE2D_ARRAY_BIAS
+        #undef  SAMPLE_TEXTURE2D_ARRAY_BIAS
+        #define SAMPLE_TEXTURE2D_ARRAY_BIAS(textureName, samplerName, coord2, index, bias) \
+            PLATFORM_SAMPLE_TEXTURE2D_ARRAY_BIAS(textureName, samplerName, coord2, index, (bias + _GlobalMipBias))
+    #endif //SAMPLE_TEXTURE2D_ARRAY_BIAS
+#endif //PLATFORM_SAMPLE_TEXTURE2D_ARRAY_BIAS
+
+//2d texture cube arrays bias manipulation
+#ifdef PLATFORM_SAMPLE_TEXTURECUBE_BIAS
+    #ifdef  SAMPLE_TEXTURECUBE
+        #undef  SAMPLE_TEXTURECUBE
+        #define SAMPLE_TEXTURECUBE(textureName, samplerName, coord3) \
+            PLATFORM_SAMPLE_TEXTURECUBE_BIAS(textureName, samplerName, coord3, _GlobalMipBias)
+    #endif
+    #ifdef  SAMPLE_TEXTURECUBE_BIAS
+        #undef  SAMPLE_TEXTURECUBE_BIAS
+        #define SAMPLE_TEXTURECUBE_BIAS(textureName, samplerName, coord3, bias) \
+            PLATFORM_SAMPLE_TEXTURECUBE_BIAS(textureName, samplerName, coord3, (bias + _GlobalMipBias))
+    #endif
+#endif
+
+//sample of texture cubemap array
+#ifdef PLATFORM_SAMPLE_TEXTURECUBE_ARRAY_BIAS
+
+    #ifdef  SAMPLE_TEXTURECUBE_ARRAY
+        #undef  SAMPLE_TEXTURECUBE_ARRAY
+        #define SAMPLE_TEXTURECUBE_ARRAY(textureName, samplerName, coord3, index)\
+            PLATFORM_SAMPLE_TEXTURECUBE_ARRAY_BIAS(textureName, samplerName, coord3, index, _GlobalMipBias)
+    #endif
+
+    #ifdef  SAMPLE_TEXTURECUBE_ARRAY_BIAS
+        #undef  SAMPLE_TEXTURECUBE_ARRAY_BIAS
+        #define SAMPLE_TEXTURECUBE_ARRAY_BIAS(textureName, samplerName, coord3, index, bias)\
+            PLATFORM_SAMPLE_TEXTURECUBE_ARRAY_BIAS(textureName, samplerName, coord3, index, (bias + _GlobalMipBias))
+    #endif
+#endif
+
+#define VT_GLOBAL_MIP_BIAS_MULTIPLIER (_GlobalMipBiasPow2)
 
 // Structs
 struct VertexPositionInputs

@@ -59,8 +59,9 @@ float4 _ProjectionParams;
 // w = 1 + 1.0/height
 float4 _ScreenParams;
 
-// mip lod bias
-float _GlobalMipLodBias;
+// mip bias
+float _GlobalMipBias;
+float _GlobalMipBiasPow2;
 
 // Values used to linearize the Z buffer (http://www.humus.name/temp/Linearize%20depth.txt)
 // x = 1-far/near
