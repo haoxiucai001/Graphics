@@ -22,49 +22,64 @@
 // EASU glue functions
 #if _USE_16BIT
 AH4 FsrEasuRH(AF2 p)
+{
+    return (AH4)GATHER_RED_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
+}
 #else
 AF4 FsrEasuRF(AF2 p)
-#endif
 {
     return GATHER_RED_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
 }
+#endif
 
 #if _USE_16BIT
 AH4 FsrEasuGH(AF2 p)
+{
+    return (AH4)GATHER_GREEN_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
+}
 #else
 AF4 FsrEasuGF(AF2 p)
-#endif
 {
     return GATHER_GREEN_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
 }
+#endif
 
 #if _USE_16BIT
 AH4 FsrEasuBH(AF2 p)
+{
+    return (AH4)GATHER_BLUE_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
+}
 #else
 AF4 FsrEasuBF(AF2 p)
-#endif
 {
     return GATHER_BLUE_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
 }
+#endif
 
 // RCAS glue functions
 #if _USE_16BIT
 AH4 FsrRcasLoadH(ASW2 p)
+{
+    return (AH4)FSR_INPUT_TEXTURE[p];
+}
 #else
 AF4 FsrRcasLoadF(ASU2 p)
-#endif
 {
     return FSR_INPUT_TEXTURE[p];
 }
+#endif
 
 #if _USE_16BIT
 void FsrRcasInputH(inout AH1 r, inout AH1 g, inout AH1 b)
-#else
-void FsrRcasInputF(inout AF1 r, inout AF1 g, inout AF1 b)
-#endif
 {
     // No conversion to linear necessary since it's already performed during EASU output
 }
+#else
+void FsrRcasInputF(inout AF1 r, inout AF1 g, inout AF1 b)
+{
+    // No conversion to linear necessary since it's already performed during EASU output
+}
+#endif
 
 half3 ApplyEASU(uint2 positionSS)
 {
@@ -81,7 +96,7 @@ half3 ApplyEASU(uint2 positionSS)
     );
 
     // Convert back to linear color space before this data is sent into RCAS
-    color = Gamma20ToLinear(color);
+    color *= color;
 
     return color;
 }
