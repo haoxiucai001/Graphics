@@ -1,3 +1,4 @@
+using System;
 using Unity.Collections;
 
 namespace UnityEngine.Rendering
@@ -89,12 +90,12 @@ namespace UnityEngine.Rendering
 
             Vector4 constants0;
 
-            // We use a temporary native array to pack two half floats into a single float before sending it to the shader
-            NativeArray<float> floatVal = new NativeArray<float>(1, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-            floatVal.ReinterpretStore<uint>(0, ((uint)Mathf.FloatToHalf(sharpness)) | ((uint)(Mathf.FloatToHalf(sharpness) << 16)));
+            ushort sharpnessAsHalf = Mathf.FloatToHalf(sharpness);
+            uint packedSharpness = (uint)(sharpnessAsHalf | (sharpnessAsHalf << 16));
+            float packedSharpnessAsFloat = BitConverter.ToSingle(BitConverter.GetBytes(packedSharpness));
 
             constants0.x = sharpness;
-            constants0.y = floatVal[0];
+            constants0.y = packedSharpnessAsFloat;
 
             // Fill the last constant with zeros to avoid using uninitialized memory
             constants0.z = 0.0f;
