@@ -1435,9 +1435,6 @@ namespace UnityEngine.Rendering.Universal.Internal
                                 m_Materials.fsr.EnableKeyword("_FXAA");
                             }
 
-                            m_Materials.fsr.EnableKeyword("_USE_16BIT");
-                            material.EnableKeyword("_USE_16BIT");
-
                             if (doSetupPass)
                             {
                                 // Setup

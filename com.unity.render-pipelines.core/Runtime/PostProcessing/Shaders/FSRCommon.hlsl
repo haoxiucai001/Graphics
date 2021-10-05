@@ -1,15 +1,13 @@
-// TODO: Move all of this to a common FSR hlsl file
-// Setup pre-portability-header defines (sets up GLSL/HLSL path, packed math support, etc)
 #define A_GPU 1
 #define A_HLSL 1
 
-#if _USE_16BIT
+#if HAS_HALF
     #define A_HALF
 #endif
 
 #include "Packages/com.unity.render-pipelines.core/Runtime/PostProcessing/Shaders/ffx/ffx_a.hlsl"
 
-#if _USE_16BIT
+#if HAS_HALF
     #define FSR_EASU_H 1
     #define FSR_RCAS_H 1
 #else
@@ -20,7 +18,7 @@
 #include "Packages/com.unity.render-pipelines.core/Runtime/PostProcessing/Shaders/ffx/ffx_fsr1.hlsl"
 
 // EASU glue functions
-#if _USE_16BIT
+#if HAS_HALF
 AH4 FsrEasuRH(AF2 p)
 {
     return (AH4)GATHER_RED_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
@@ -32,7 +30,7 @@ AF4 FsrEasuRF(AF2 p)
 }
 #endif
 
-#if _USE_16BIT
+#if HAS_HALF
 AH4 FsrEasuGH(AF2 p)
 {
     return (AH4)GATHER_GREEN_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
@@ -44,7 +42,7 @@ AF4 FsrEasuGF(AF2 p)
 }
 #endif
 
-#if _USE_16BIT
+#if HAS_HALF
 AH4 FsrEasuBH(AF2 p)
 {
     return (AH4)GATHER_BLUE_TEXTURE2D_X(FSR_INPUT_TEXTURE, FSR_INPUT_SAMPLER, p);
@@ -57,7 +55,7 @@ AF4 FsrEasuBF(AF2 p)
 #endif
 
 // RCAS glue functions
-#if _USE_16BIT
+#if HAS_HALF
 AH4 FsrRcasLoadH(ASW2 p)
 {
     return (AH4)FSR_INPUT_TEXTURE[p];
@@ -69,7 +67,7 @@ AF4 FsrRcasLoadF(ASU2 p)
 }
 #endif
 
-#if _USE_16BIT
+#if HAS_HALF
 void FsrRcasInputH(inout AH1 r, inout AH1 g, inout AH1 b)
 {
     // No conversion to linear necessary since it's already performed during EASU output
@@ -85,7 +83,7 @@ half3 ApplyEASU(uint2 positionSS)
 {
     // Note: The input data for EASU should always be in gamma2.0 color space from the previous pass
 
-    #if _USE_16BIT
+    #if HAS_HALF
     AH3 color;
     FsrEasuH(
     #else
@@ -103,7 +101,7 @@ half3 ApplyEASU(uint2 positionSS)
 
 half3 ApplyRCAS(uint2 positionSS)
 {
-    #if _USE_16BIT
+    #if HAS_HALF
     AH3 color;
     FsrRcasH(
     #else

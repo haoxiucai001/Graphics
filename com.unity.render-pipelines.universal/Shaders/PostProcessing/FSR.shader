@@ -3,7 +3,6 @@ Shader "Hidden/Universal Render Pipeline/FSR"
     HLSLINCLUDE
         #pragma exclude_renderers gles
         #pragma multi_compile_local_fragment _ _FXAA
-        #pragma multi_compile_local_fragment _ _USE_16BIT
 
         #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
         #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Filtering.hlsl"
