@@ -1227,6 +1227,7 @@ namespace UnityEngine.Rendering.HighDefinition
                 passData.mipIndex = mipIndex;
                 passData.xrTexture = xrTexture;
                 passData.input = builder.ReadTexture(input);
+                passData.useCustomScaleBias = false;
                 if (useCustomScaleBias)
                 {
                     passData.useCustomScaleBias = true;
