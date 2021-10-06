@@ -179,6 +179,7 @@ namespace UnityEngine.Rendering.HighDefinition
         public static readonly int _ViewTilesFlags = Shader.PropertyToID("_ViewTilesFlags");
         public static readonly int _ClusterDebugMode = Shader.PropertyToID("_ClusterDebugMode");
         public static readonly int _ClusterDebugDistance = Shader.PropertyToID("_ClusterDebugDistance");
+        public static readonly int _ClusterDebugLightViewportSize = Shader.PropertyToID("_ClusterDebugLightViewportSize");
         public static readonly int _MousePixelCoord = Shader.PropertyToID("_MousePixelCoord");
         public static readonly int _MouseClickPixelCoord = Shader.PropertyToID("_MouseClickPixelCoord");
         public static readonly int _DebugFont = Shader.PropertyToID("_DebugFont");

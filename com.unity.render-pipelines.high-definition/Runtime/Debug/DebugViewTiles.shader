@@ -48,6 +48,8 @@ Shader "Hidden/HDRP/DebugViewTiles"
             uint _NumTiles;
             float _ClusterDebugDistance;
             int _ClusterDebugMode;
+            float4 _ClusterDebugLightViewportSize;
+
 
             StructuredBuffer<uint> g_TileList;
             Buffer<uint> g_DispatchIndirectBuffer;
@@ -157,11 +159,11 @@ Shader "Hidden/HDRP/DebugViewTiles"
                 // For debug shaders, Viewport can be at a non zero (x,y) but the pipeline render targets all starts at (0,0)
                 // input.positionCS in in pixel coordinate relative to the render target origin so they will be offsted compared to internal render textures
                 // To solve that, we compute pixel coordinates from full screen quad texture coordinates which start correctly at (0,0)
-                uint2 pixelCoord = uint2(input.texcoord.xy * _ScreenSize.xy);
+                uint2 pixelCoord = uint2(input.texcoord.xy * _ClusterDebugLightViewportSize.xy);
 
                 float depth = GetTileDepth(pixelCoord);
 
-                PositionInputs posInput = GetPositionInput(pixelCoord.xy, _ScreenSize.zw, depth, UNITY_MATRIX_I_VP, UNITY_MATRIX_V, pixelCoord / GetTileSize());
+                PositionInputs posInput = GetPositionInput(pixelCoord.xy, _ClusterDebugLightViewportSize.zw, depth, UNITY_MATRIX_I_VP, UNITY_MATRIX_V, pixelCoord / GetTileSize());
 
                 int2 tileCoord = (float2)pixelCoord / GetTileSize();
                 int2 mouseTileCoord = _MousePixelCoord.xy / GetTileSize();
@@ -229,7 +231,7 @@ Shader "Hidden/HDRP/DebugViewTiles"
                 {
                     float depthMouse = GetTileDepth(_MousePixelCoord.xy);
 
-                    PositionInputs mousePosInput = GetPositionInput(_MousePixelCoord.xy, _ScreenSize.zw, depthMouse, UNITY_MATRIX_I_VP, UNITY_MATRIX_V, mouseTileCoord);
+                    PositionInputs mousePosInput = GetPositionInput(_MousePixelCoord.xy, _ClusterDebugLightViewportSize.zw, depthMouse, UNITY_MATRIX_I_VP, UNITY_MATRIX_V, mouseTileCoord);
 
                     uint category = (LIGHTCATEGORY_COUNT - 1) - tileCoord.y;
                     uint start;
