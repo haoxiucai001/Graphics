@@ -3015,7 +3015,7 @@ namespace UnityEngine.Rendering.HighDefinition
 
                         source = passData.destination;
 
-                        PushFullScreenDebugTexture(renderGraph, debugCocTexture, FullScreenDebugMode.DepthOfFieldCoc);
+                        PushFullScreenDebugTexture(renderGraph, debugCocTexture, debugCocTextureScales, FullScreenDebugMode.DepthOfFieldCoc);
                     }
                     else
                     {
@@ -3045,7 +3045,7 @@ namespace UnityEngine.Rendering.HighDefinition
                             });
 
                         source = passData.destination;
-                        PushFullScreenDebugTexture(renderGraph, debugCocTexture, FullScreenDebugMode.DepthOfFieldCoc);
+                        PushFullScreenDebugTexture(renderGraph, debugCocTexture, debugCocTextureScales, FullScreenDebugMode.DepthOfFieldCoc);
                     }
                 }
 
