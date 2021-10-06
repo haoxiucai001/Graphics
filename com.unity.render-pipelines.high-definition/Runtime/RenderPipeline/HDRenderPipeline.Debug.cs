@@ -12,6 +12,9 @@ namespace UnityEngine.Rendering.HighDefinition
         TextureHandle m_DebugFullScreenTexture;
         ComputeBufferHandle m_DebugFullScreenComputeBuffer;
         ShaderVariablesDebugDisplay m_ShaderVariablesDebugDisplayCB = new ShaderVariablesDebugDisplay();
+    
+        ComputeShader m_ClearFullScreenBufferCS;
+        int m_ClearFullScreenBufferKernel;
 
         Material m_DebugViewMaterialGBuffer;
         Material m_DebugViewMaterialGBufferShadowMask;
@@ -50,6 +53,8 @@ namespace UnityEngine.Rendering.HighDefinition
             m_DebugHDShadowMapMaterial = CoreUtils.CreateEngineMaterial(defaultResources.shaders.debugHDShadowMapPS);
             m_DebugLocalVolumetricFogMaterial = CoreUtils.CreateEngineMaterial(defaultResources.shaders.debugLocalVolumetricFogAtlasPS);
             m_DebugBlitMaterial = CoreUtils.CreateEngineMaterial(defaultResources.shaders.debugBlitQuad);
+            m_ClearFullScreenBufferCS = defaultResources.shaders.clearDebugBufferCS;
+            m_ClearFullScreenBufferKernel = m_ClearFullScreenBufferCS.FindKernel("clearMain");
 #if ENABLE_VIRTUALTEXTURES
             m_VTDebugBlit = CoreUtils.CreateEngineMaterial(defaultResources.shaders.debugViewVirtualTexturingBlit);
 #endif
@@ -183,6 +188,7 @@ namespace UnityEngine.Rendering.HighDefinition
                 cb._MatcapMixAlbedo = 0;
                 cb._MatcapViewScale = 1.0f;
 #endif
+                cb._DebugViewportSize = hdCamera.screenSize;
                 cb._DebugLightingAlbedo = debugAlbedo;
                 cb._DebugLightingSmoothness = debugSmoothness;
                 cb._DebugLightingNormal = debugNormal;
@@ -278,6 +284,9 @@ namespace UnityEngine.Rendering.HighDefinition
             public FrameSettings frameSettings;
             public ComputeBufferHandle debugBuffer;
             public RendererListHandle rendererList;
+            public ComputeShader clearBufferCS;
+            public int clearBufferCSKernel;
+            public int numPixels;
         }
 
         void RenderFullScreenDebug(RenderGraph renderGraph, TextureHandle colorBuffer, TextureHandle depthBuffer, CullingResults cull, HDCamera hdCamera)
@@ -293,10 +302,17 @@ namespace UnityEngine.Rendering.HighDefinition
                 passData.frameSettings = hdCamera.frameSettings;
                 passData.debugBuffer = builder.WriteComputeBuffer(renderGraph.CreateComputeBuffer(new ComputeBufferDesc(hdCamera.actualWidth * hdCamera.actualHeight * hdCamera.viewCount, sizeof(uint))));
                 passData.rendererList = builder.UseRendererList(renderGraph.CreateRendererList(CreateOpaqueRendererListDesc(cull, hdCamera.camera, m_FullScreenDebugPassNames, renderQueueRange: RenderQueueRange.all)));
+                passData.clearBufferCS = m_ClearFullScreenBufferCS;
+                passData.clearBufferCSKernel = m_ClearFullScreenBufferKernel;
+                passData.numPixels = (int)hdCamera.screenSize.x * (int)hdCamera.screenSize.y;
 
                 builder.SetRenderFunc(
                     (FullScreenDebugPassData data, RenderGraphContext ctx) =>
                     {
+
+                        ctx.cmd.SetComputeBufferParam(data.clearBufferCS, data.clearBufferCSKernel, "_FullScreenDebugBuffer", data.debugBuffer);
+                        ctx.cmd.DispatchCompute(data.clearBufferCS, data.clearBufferCSKernel, (data.numPixels + 63) / 64, 1, 1);
+
                         ctx.cmd.SetRandomWriteTarget(1, data.debugBuffer);
                         CoreUtils.DrawRendererList(ctx.renderContext, ctx.cmd, data.rendererList);
                         ctx.cmd.ClearRandomWriteTargets();
@@ -339,7 +355,7 @@ namespace UnityEngine.Rendering.HighDefinition
                     passData.fullscreenBuffer = builder.ReadComputeBuffer(m_DebugFullScreenComputeBuffer);
                 else
                     passData.fullscreenBuffer = builder.CreateTransientComputeBuffer(new ComputeBufferDesc(4, sizeof(uint)));
-                passData.output = builder.WriteTexture(renderGraph.CreateTexture(new TextureDesc(Vector2.one, true, true)
+                passData.output = builder.WriteTexture(renderGraph.CreateTexture(new TextureDesc(Vector2.one, false /* we dont want DRS on this output target*/, true /*We want XR support on this output target*/)
                 { colorFormat = rtFormat, name = "ResolveFullScreenDebug" }));
 
                 builder.SetRenderFunc(
