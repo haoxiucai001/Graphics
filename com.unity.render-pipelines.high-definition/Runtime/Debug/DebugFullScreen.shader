@@ -287,7 +287,7 @@ Shader "Hidden/HDRP/DebugFullScreen"
                 }
                 if (_FullScreenDebugMode == FULLSCREENDEBUGMODE_COLOR_LOG)
                 {
-                    float4 color = SAMPLE_TEXTURE2D_X(_DebugFullScreenTexture, s_point_clamp_sampler, input.texcoord);//LOAD_TEXTURE2D_X(_DebugFullScreenTexture, (uint2)input.positionCS.xy);
+                    float4 color = SAMPLE_TEXTURE2D_X(_DebugFullScreenTexture, s_point_clamp_sampler, input.texcoord);
                     return color;
                 }
                 if (_FullScreenDebugMode == FULLSCREENDEBUGMODE_DEPTH_OF_FIELD_COC)
@@ -317,7 +317,9 @@ Shader "Hidden/HDRP/DebugFullScreen"
                 }
                 if (_FullScreenDebugMode == FULLSCREENDEBUGMODE_CONTACT_SHADOWS_FADE)
                 {
-                    uint contactShadowData = LOAD_TEXTURE2D_X(_ContactShadowTexture, (uint2)input.positionCS.xy).r;
+                    int w, h, e, l;
+                    _ContactShadowTexture.GetDimensions(0, w, h, e, l);
+                    uint contactShadowData = LOAD_TEXTURE2D_X(_ContactShadowTexture, (uint2)(input.texcoord.xy * float2(w, h))).r;
                     float fade = float((contactShadowData >> 24)) / 255.0;
 
                     return float4(fade.xxx, 0.0);
@@ -340,7 +342,8 @@ Shader "Hidden/HDRP/DebugFullScreen"
                 {
                     // Reuse depth display function from DebugViewMaterial
                     int2 mipOffset = _DebugDepthPyramidOffsets[_DebugDepthPyramidMip];
-                    uint2 pixCoord = (uint2)input.positionCS.xy >> _DebugDepthPyramidMip;
+                    uint2 remappedPos = (uint2)(input.texcoord.xy * _DebugViewportSize.xy);
+                    uint2 pixCoord = (uint2)remappedPos.xy >> _DebugDepthPyramidMip;
                     float depth = LOAD_TEXTURE2D_X(_CameraDepthTexture, pixCoord + mipOffset).r;
                     PositionInputs posInput = GetPositionInput(input.positionCS.xy, _ScreenSize.zw, depth, UNITY_MATRIX_I_VP, UNITY_MATRIX_V);
 
