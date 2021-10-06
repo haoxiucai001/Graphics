@@ -12,7 +12,7 @@ namespace UnityEngine.Rendering.HighDefinition
         TextureHandle m_DebugFullScreenTexture;
         ComputeBufferHandle m_DebugFullScreenComputeBuffer;
         ShaderVariablesDebugDisplay m_ShaderVariablesDebugDisplayCB = new ShaderVariablesDebugDisplay();
-    
+
         ComputeShader m_ClearFullScreenBufferCS;
         int m_ClearFullScreenBufferKernel;
 

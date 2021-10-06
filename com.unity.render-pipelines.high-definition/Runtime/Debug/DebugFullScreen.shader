@@ -385,12 +385,13 @@ Shader "Hidden/HDRP/DebugFullScreen"
                 }
                 if (_FullScreenDebugMode == FULLSCREENDEBUGMODE_VERTEX_DENSITY)
                 {
-                    uint2 quad = (uint2)input.positionCS;
-                    uint quad_idx = _ScreenSize.x * (_ScreenSize.y * SLICE_ARRAY_INDEX + quad.y) + quad.x;
+                    uint2 samplePosition = (uint2)((input.texcoord / _RTHandleScale.xy) * _DebugViewportSize.xy);
+                    uint2 quad = (uint2)samplePosition.xy;
+                    uint2 renderScreenSize = (uint2)_DebugViewportSize.xy;
+                    uint quad_idx = renderScreenSize.x * (renderScreenSize.y * SLICE_ARRAY_INDEX + quad.y) + quad.x;
                     float4 color = (float4)0;
 
                     float density = (float)_FullScreenDebugBuffer[quad_idx];
-                    _FullScreenDebugBuffer[quad_idx] = 0;
                     if ((density > 0.001))
                         color.rgb = HsvToRgb(float3(0.66 * saturate(1.0 - (1.0 / _VertexDensityMaxPixelCost) * density), 1.0, 1.0));
 
