@@ -1233,7 +1233,7 @@ namespace UnityEngine.Rendering.HighDefinition
                     passData.customScaleBias = new Vector4(customScales.x, customScales.y, 0.0f, 0.0f);
                 }
 
-                passData.output = builder.UseColorBuffer(renderGraph.CreateTexture(new TextureDesc(Vector2.one, false, true)
+                passData.output = builder.UseColorBuffer(renderGraph.CreateTexture(new TextureDesc(Vector2.one, true, true)
                 { colorFormat = rtFormat, name = "DebugFullScreen" }), 0);
 
                 builder.SetRenderFunc(
