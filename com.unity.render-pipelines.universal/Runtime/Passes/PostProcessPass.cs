@@ -1400,7 +1400,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             {
                 switch (cameraData.upscalingMode)
                 {
-                    case UpscalingMode.Integer:
+                    case UpscalingMode.Nearest:
                     {
                         material.EnableKeyword("_POINT_SAMPLING");
                         break;

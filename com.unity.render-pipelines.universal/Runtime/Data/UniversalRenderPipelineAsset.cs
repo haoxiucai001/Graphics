@@ -142,8 +142,8 @@ namespace UnityEngine.Rendering.Universal
     /// </summary>
     public enum UpscalingMode
     {
-        Bilinear,
-        Integer,
+        Linear,
+        Nearest,
         [InspectorName("FidelityFX Super Resolution")]
         FSR
     }
@@ -177,7 +177,7 @@ namespace UnityEngine.Rendering.Universal
         [SerializeField] bool m_SupportsHDR = true;
         [SerializeField] MsaaQuality m_MSAA = MsaaQuality.Disabled;
         [SerializeField] float m_RenderScale = 1.0f;
-        [SerializeField] UpscalingMode m_UpscalingMode = UpscalingMode.Bilinear;
+        [SerializeField] UpscalingMode m_UpscalingMode = UpscalingMode.Linear;
         // TODO: Shader Quality Tiers
 
         // Main directional light Settings
