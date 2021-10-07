@@ -1413,16 +1413,19 @@ namespace UnityEngine.Rendering.Universal.Internal
                         // The FSR implementation moves FXAA earlier in the post processing pipeline since all AA should be peformed before running FSR
                         fxaaHandled = true;
 
-                        var rtDesc = cameraData.cameraTargetDescriptor;
-                        rtDesc.width = cameraData.pixelWidth;
-                        rtDesc.height = cameraData.pixelHeight;
-                        rtDesc.msaaSamples = 1;
-                        rtDesc.depthBufferBits = 0;
-
                         bool doSetupPass = m_hasUserPostProcessingPasses || (cameraData.antialiasing == AntialiasingMode.FastApproximateAntialiasing);
 
                         using (new ProfilingScope(cmd, ProfilingSampler.Get(URPProfileId.FSR)))
                         {
+                            // Make sure to remove any MSAA and attached depth buffers from the temporary render targets
+                            var tempRtDesc = cameraData.cameraTargetDescriptor;
+                            tempRtDesc.msaaSamples = 1;
+                            tempRtDesc.depthBufferBits = 0;
+
+                            var upscaleRtDesc = tempRtDesc;
+                            upscaleRtDesc.width = cameraData.pixelWidth;
+                            upscaleRtDesc.height = cameraData.pixelHeight;
+
                             RenderTargetIdentifier cameraTarget = (cameraData.targetTexture != null) ? new RenderTargetIdentifier(cameraData.targetTexture) : cameraTargetHandle.Identifier();
                             cmd.SetRenderTarget(cameraTarget, colorLoadAction, RenderBufferStoreAction.Store, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.DontCare);
                             cmd.SetViewport(cameraData.pixelRect);
@@ -1438,7 +1441,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                             if (doSetupPass)
                             {
                                 // Setup
-                                cmd.GetTemporaryRT(tempSetupTextureId, cameraData.cameraTargetDescriptor, FilterMode.Bilinear);
+                                cmd.GetTemporaryRT(tempSetupTextureId, tempRtDesc, FilterMode.Bilinear);
                                 var tempSetupRtId = new RenderTargetIdentifier(tempSetupTextureId, 0, CubemapFace.Unknown, -1);
                                 cmd.Blit(m_Source, tempSetupRtId, m_Materials.fsr, 0);
 
@@ -1447,7 +1450,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                             }
 
                             // EASU
-                            cmd.GetTemporaryRT(finalUpscaleTextureId, rtDesc, FilterMode.Bilinear);
+                            cmd.GetTemporaryRT(finalUpscaleTextureId, upscaleRtDesc, FilterMode.Bilinear);
                             var finalUpscaleRtId = new RenderTargetIdentifier(finalUpscaleTextureId, 0, CubemapFace.Unknown, -1);
                             var fsrInputSize = new Vector2(cameraData.cameraTargetDescriptor.width, cameraData.cameraTargetDescriptor.height);
                             var fsrOutputSize = new Vector2(cameraData.pixelWidth, cameraData.pixelHeight);
@@ -1460,7 +1463,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                             // RCAS is performed during the final post blit but we set up the parameters here
                             material.EnableKeyword("_FSR");
                             FSRUtils.SetRcasConstants(cmd);
-                            PostProcessUtils.SetSourceSize(cmd, rtDesc);
+                            PostProcessUtils.SetSourceSize(cmd, upscaleRtDesc);
                             m_Source = finalUpscaleRtId;
                         }
 
