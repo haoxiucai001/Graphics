@@ -64,6 +64,13 @@ namespace UnityEngine.Rendering
         /// <param name="list">List of widgets to add the stats.</param>
         public void RegisterDebugUI(List<DebugUI.Widget> list)
         {
+            list.Add(new DebugUI.MessageBox
+            {
+                displayName = "Warning: No frame timing data available. Ensure that the \"Frame Timing Stats\" option is enabled in Player Settings.",
+                style = DebugUI.MessageBox.Style.Warning,
+                isHiddenCallback = () => FrameTimingManager.IsFeatureEnabled()
+            });
+
             list.Add(new DebugUI.Foldout()
             {
                 displayName = "Frame Stats",
