@@ -145,6 +145,10 @@ namespace UnityEngine.Rendering
 
         private List<MeshRenderer> m_AddedRenderers;
 
+        private GeometryPrimitivePool m_GeoPrimitivePool = null;
+        public GeometryPrimitivePool GeoPrimitivePool { get { return m_GeoPrimitivePool; } }
+        
+
         public static T* Malloc<T>(int count) where T : unmanaged
         {
             return (T*)UnsafeUtility.Malloc(
@@ -386,10 +390,33 @@ namespace UnityEngine.Rendering
             return jobHandleOutput;
         }
 
+        public bool meshPoolEnabled => m_GeoPrimitivePool != null;
+
+        public void CreateMeshPool(List<MeshRenderer> renderers)
+        {
+            DisposeMeshPool();
+            m_GeoPrimitivePool = new GeometryPrimitivePool();
+            m_GeoPrimitivePool.Build(renderers, ignoreRendererEnableFlag : true);
+        }
+
+        public void DisposeMeshPool()
+        {
+            if (m_GeoPrimitivePool == null)
+                return;
+
+            m_GeoPrimitivePool = null;
+            m_GeoPrimitivePool.Dispose();
+        }
+
         // Start is called before the first frame update
-        public void Initialize(List<MeshRenderer> renderers)
+        public void Initialize(List<MeshRenderer> renderers, bool createMeshPool)
         {
             m_BatchRendererGroup = new BatchRendererGroup(this.OnPerformCulling, IntPtr.Zero);
+            if (createMeshPool)
+            {
+                m_GeoPrimitivePool = new GeometryPrimitivePool();
+                m_GeoPrimitivePool.Build(renderers);
+            }
 
             // Create a batch...
 #if DEBUG_LOG_SCENE
@@ -721,6 +748,8 @@ namespace UnityEngine.Rendering
 
                 foreach (var added in m_AddedRenderers)
                     added.forceRenderingOff = false;
+
+                DisposeMeshPool();
             }
         }
     }
@@ -728,6 +757,25 @@ namespace UnityEngine.Rendering
     public class RenderBRG : MonoBehaviour
     {
         private Dictionary<Scene, SceneBRG> m_Scenes = new();
+
+        private bool m_EnableDeferredMaterials = false;
+
+        public bool EnableDeferredMaterials = false;
+
+        private void SyncGeometry()
+        {
+            foreach (var pair in m_Scenes)
+            {
+                var renderers = GetSceneValidRenderers(pair.Key);
+                if (pair.Value.meshPoolEnabled != m_EnableDeferredMaterials)
+                {
+                    if (m_EnableDeferredMaterials)
+                        pair.Value.CreateMeshPool(GetSceneValidRenderers(pair.Key));
+                    else
+                        pair.Value.DisposeMeshPool();
+                }
+            }
+        }
 
         private void OnEnable()
         {
@@ -761,6 +809,11 @@ namespace UnityEngine.Rendering
                 m_Scenes[scene] = null;
         }
 
+        public void Update()
+        {
+            SyncGeometry();
+        }
+
         private static void GetValidChildRenderers(GameObject root, List<MeshRenderer> toAppend)
         {
             if (root == null
@@ -779,14 +832,20 @@ namespace UnityEngine.Rendering
                 GetValidChildRenderers(root.transform.GetChild(i).gameObject, toAppend);
         }
 
-        private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+        private List<MeshRenderer> GetSceneValidRenderers(Scene scene)
         {
             var renderers = new List<MeshRenderer>();
             foreach (var go in scene.GetRootGameObjects())
                 GetValidChildRenderers(go, renderers);
 
+            return renderers;
+        }
+
+        private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            List<MeshRenderer> renderers = GetSceneValidRenderers(scene);
             SceneBRG brg = new SceneBRG();
-            brg.Initialize(renderers);
+            brg.Initialize(renderers, m_EnableDeferredMaterials);
             m_Scenes[scene] = brg;
         }
 
