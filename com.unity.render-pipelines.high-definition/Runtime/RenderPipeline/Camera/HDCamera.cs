@@ -692,8 +692,7 @@ namespace UnityEngine.Rendering.HighDefinition
 
             frustumPlaneEquations = new Vector4[6];
 
-            var archetype = VolumeComponentArchetype.FromFilter(new IsSupportedVolumeComponentFilter(typeof(HDRenderPipeline)));
-            volumeStack = new VolumeStack(archetype);
+            volumeStack = new VolumeStack(HDUtils.hdVolumeArchetype);
 
             Reset();
         }
