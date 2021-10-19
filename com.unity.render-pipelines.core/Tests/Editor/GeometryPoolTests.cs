@@ -163,7 +163,7 @@ namespace UnityEngine.Rendering.Tests
             Assert.IsTrue(status);
 
             status = geometryPool.Register(sSphere, out var _);
-            Assert.IsTrue(status); //Capacity is increased automatically in the Native map container, so we expect this allocation to succeed.
+            Assert.IsTrue(!status);
 
             geometryPool.Unregister(sCapsule);
 

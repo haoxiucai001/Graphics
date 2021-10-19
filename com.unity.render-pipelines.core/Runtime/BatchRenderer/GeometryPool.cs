@@ -80,7 +80,8 @@ namespace UnityEngine.Rendering
         public ComputeBuffer m_vertexPoolUV1 = null;
         public ComputeBuffer m_vertexPoolN   = null;
         public ComputeBuffer m_vertexPoolT   = null;
-        public ComputeBuffer m_indexPool  = null;
+
+        public Mesh globalMesh = null;
 
         private int m_maxVertCounts;
         private int m_maxIndexCounts;
@@ -92,19 +93,31 @@ namespace UnityEngine.Rendering
         private NativeList<GeometrySlot> m_geoSlots;
         private NativeList<GeometryPoolHandle> m_freeGeoSlots;
 
+        private int m_usedGeoSlots;
+
         public GeometryPool(in GeometryPoolDesc desc)
         {
             m_desc = desc;
             m_maxVertCounts = CalcVertexCount();
             m_maxIndexCounts = CalcIndexCount();
+            m_usedGeoSlots = 0;
 
-            
             m_vertexPoolP   = new ComputeBuffer(m_maxVertCounts, System.Runtime.InteropServices.Marshal.SizeOf<Vector3>());
             m_vertexPoolUV  = new ComputeBuffer(m_maxVertCounts, System.Runtime.InteropServices.Marshal.SizeOf<Vector2>());
             m_vertexPoolUV1 = new ComputeBuffer(m_maxVertCounts, System.Runtime.InteropServices.Marshal.SizeOf<Vector2>());
             m_vertexPoolN   = new ComputeBuffer(m_maxVertCounts, System.Runtime.InteropServices.Marshal.SizeOf<Vector3>());
             m_vertexPoolT   = new ComputeBuffer(m_maxVertCounts, System.Runtime.InteropServices.Marshal.SizeOf<Vector3>());
-            m_indexPool     = new ComputeBuffer(m_maxIndexCounts, System.Runtime.InteropServices.Marshal.SizeOf<int>());
+
+            globalMesh      = new Mesh();
+            globalMesh.indexBufferTarget = GraphicsBuffer.Target.Raw;
+            globalMesh.SetIndexBufferParams(m_maxIndexCounts, IndexFormat.UInt32);
+            globalMesh.subMeshCount = desc.maxMeshes;            
+            globalMesh.vertices = new Vector3[1];
+            globalMesh.UploadMeshData(false);
+
+            Assertions.Assert.IsTrue(globalMesh.GetIndexBuffer() != null);
+            var ib = globalMesh.GetIndexBuffer();
+            Assertions.Assert.IsTrue((ib.target & GraphicsBuffer.Target.Raw) != 0);
 
             m_meshSlots = new NativeHashMap<int, MeshSlot>(desc.maxMeshes, Allocator.Persistent);
             m_geoSlots = new NativeList<GeometrySlot>(Allocator.Persistent);
@@ -127,12 +140,14 @@ namespace UnityEngine.Rendering
             m_geoSlots.Dispose();
             m_meshSlots.Dispose();
 
-            m_indexPool.Release();
             m_vertexPoolT.Release();
             m_vertexPoolN.Release();
             m_vertexPoolUV1.Release();
             m_vertexPoolUV.Release();
             m_vertexPoolP.Release();
+
+            CoreUtils.Destroy(globalMesh);
+            globalMesh = null;
         }
 
         private static int DivUp(int x, int y) => (x + y - 1) / y;
@@ -163,6 +178,12 @@ namespace UnityEngine.Rendering
                 indexAlloc = BlockAllocator.Allocation.Invalid
             };
 
+            if ((m_usedGeoSlots + 1) > m_desc.maxMeshes)
+            {
+                outHandle = GeometryPoolHandle.Invalid;
+                return false;
+            }
+
             newSlot.vertexAlloc = m_vertexAllocator.Allocate(vertexCount);
             if (!newSlot.vertexAlloc.valid)
             {
@@ -178,7 +199,7 @@ namespace UnityEngine.Rendering
                 outHandle = GeometryPoolHandle.Invalid;
                 return false;
             }
-
+            
             if (m_freeGeoSlots.IsEmpty)
             {
                 outHandle.index = m_geoSlots.Length;
@@ -192,6 +213,15 @@ namespace UnityEngine.Rendering
                 m_geoSlots[outHandle.index] = newSlot;
             }
 
+            ++m_usedGeoSlots;
+            var descriptor = new SubMeshDescriptor();
+            descriptor.baseVertex = 0;
+            descriptor.firstVertex = 0;
+            descriptor.indexCount = newSlot.indexAlloc.block.count;
+            descriptor.indexStart = newSlot.indexAlloc.block.offset;
+            descriptor.topology = MeshTopology.Triangles;
+            descriptor.vertexCount = 1;
+            globalMesh.SetSubMesh(outHandle.index, descriptor, MeshUpdateFlags.DontValidateIndices | MeshUpdateFlags.DontNotifyMeshUsers | MeshUpdateFlags.DontRecalculateBounds);
             return true;
         }
 
@@ -200,6 +230,7 @@ namespace UnityEngine.Rendering
             if (!handle.valid)
                 throw new System.Exception("Cannot free invalid geo pool handle");
 
+            --m_usedGeoSlots;
             m_freeGeoSlots.Add(handle);
             GeometrySlot slot = m_geoSlots[handle.index];
             DeallocateSlot(ref slot);
