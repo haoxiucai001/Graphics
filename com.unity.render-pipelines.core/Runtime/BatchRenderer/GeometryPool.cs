@@ -12,102 +12,67 @@ using UnityEngine.Rendering;
 
 namespace UnityEngine.Rendering
 {
-
     public struct GeometryPoolDesc
     {
         public int vertexPoolByteSize;
         public int indexPoolByteSize;
+        public int maxMeshes;
 
-        static GeometryPoolDesc NewDefault()
+        public static GeometryPoolDesc NewDefault()
         {
             return new GeometryPoolDesc()
             {
                 vertexPoolByteSize = 32 * 1024 * 1024, //32 mb
-                indexPoolByteSize = 16 * 1024 * 1024 //16 mb
+                indexPoolByteSize = 16 * 1024 * 1024, //16 mb
+                maxMeshes = 4096
             }; 
         }
     }
 
-    internal struct GeometryPoolLinearAllocator
+    public struct GeometryPoolHandle
     {
-        public struct Block
-        {
-            public int offset;
-            public int count;
-        }
-
-        public struct Allocation
-        {
-            public int handle;
-            public Block block;
-
-            public static Allocation Invalid = new Allocation() { handle = -1 };
-            public bool Valid() => handle != -1;
-        }
-
-        private int m_freeElementCount;
-        private NativeList<Block> m_freeBlocks;
-
-        public void Initialize(int maxElementCounts)
-        {
-            m_freeElementCount = maxElementCounts;
-            m_freeBlocks  = new NativeList<Block>(Allocator.Persistent);
-            m_freeBlocks.Add(new Block() { offset = 0, count = m_freeElementCount });
-        }
-
-        public Allocation Allocate(int elementCounts)
-        {
-            if (elementCounts > m_freeElementCount || m_freeBlocks.IsEmpty)
-                return Allocation.Invalid;
-
-            int selectedBlock = -1;
-            int currentBlockCount = 0;
-            for (int b = 0; b < m_freeBlocks.Count(); ++b)
-            {
-                Block block = m_freeBlocks[b];
-
-                //simple naive allocator, we find the smallest possible space to allocate in our blocks.
-                if (elementCounts <= block.count && (selectedBlock == -1 || block.count < currentBlockCount))
-                {
-                    currentBlockCount = block.count;
-                    selectedBlock = b;
-                }
-            }
-
-            if (selectedBlock == -1)
-                return Allocation.Invalid;
-
-
-            Block activeBlock = m_freeBlocks[selectedBlock];
-            Block split = activeBlock;
-
-            split.offset += elementCounts;
-            split.count -= elementCounts;
-            activeBlock.count = elementCounts;
-
-            if (split.count > 0)
-                m_freeBlocks[selectedBlock] = split;
-            else
-                m_freeBlocks.RemoveAtSwapBack(selectedBlock);
-
-            return Allocation.Invalid;
-
-        }
-
-        public void FreeAllocation(in Allocation allocation)
-        {
-            if (!allocation.Valid())
-                throw new System.Exception("Cannot free invalid allocation");
-        }
-
-        public void Dispose()
-        {
-            m_freeBlocks.Dispose();
-        }
+        public int index;
+        public static GeometryPoolHandle Invalid = new GeometryPoolHandle() { index = -1 };
+        public bool valid => index != -1;
     }
 
     public class GeometryPool
     {
+        private struct MeshSlot
+        {
+            public int refCount;
+            public int meshHash;
+            public GeometryPoolHandle geometryHandle;
+        }
+
+        private struct GeometrySlot
+        {
+            public BlockAllocator.Allocation vertexAlloc;
+            public BlockAllocator.Allocation indexAlloc;
+
+            public static GeometrySlot Invalid = new GeometrySlot()
+            {
+                vertexAlloc = BlockAllocator.Allocation.Invalid,
+                indexAlloc = BlockAllocator.Allocation.Invalid
+            };
+
+            public bool valid => vertexAlloc.valid && indexAlloc.valid;
+        }
+
+        public static int GetVertexByteSize()
+        {
+            return System.Runtime.InteropServices.Marshal.SizeOf<Vector3>() + /*pos*/
+                   System.Runtime.InteropServices.Marshal.SizeOf<Vector2>() + /*uv0*/
+                   System.Runtime.InteropServices.Marshal.SizeOf<Vector2>() + /*uv1*/
+                   System.Runtime.InteropServices.Marshal.SizeOf<Vector3>() + /*N*/
+                   System.Runtime.InteropServices.Marshal.SizeOf<Vector3>();  /*T*/
+        }
+
+        public static int GetIndexByteSize()
+        {
+            return System.Runtime.InteropServices.Marshal.SizeOf<int>();
+        }
+
         GeometryPoolDesc m_desc;
 
         public ComputeBuffer m_vertexPoolP   = null;
@@ -119,6 +84,13 @@ namespace UnityEngine.Rendering
 
         private int m_maxVertCounts;
         private int m_maxIndexCounts;
+
+        private BlockAllocator m_vertexAllocator;
+        private BlockAllocator m_indexAllocator;
+
+        private NativeHashMap<int, MeshSlot> m_meshSlots;
+        private NativeList<GeometrySlot> m_geoSlots;
+        private NativeList<GeometryPoolHandle> m_freeGeoSlots;
 
         public GeometryPool(in GeometryPoolDesc desc)
         {
@@ -132,39 +104,171 @@ namespace UnityEngine.Rendering
             m_vertexPoolUV1 = new ComputeBuffer(m_maxVertCounts, System.Runtime.InteropServices.Marshal.SizeOf<Vector2>());
             m_vertexPoolN   = new ComputeBuffer(m_maxVertCounts, System.Runtime.InteropServices.Marshal.SizeOf<Vector3>());
             m_vertexPoolT   = new ComputeBuffer(m_maxVertCounts, System.Runtime.InteropServices.Marshal.SizeOf<Vector3>());
-            
             m_indexPool     = new ComputeBuffer(m_maxIndexCounts, System.Runtime.InteropServices.Marshal.SizeOf<int>());
 
+            m_meshSlots = new NativeHashMap<int, MeshSlot>(desc.maxMeshes, Allocator.Persistent);
+            m_geoSlots = new NativeList<GeometrySlot>(Allocator.Persistent);
+            m_freeGeoSlots = new NativeList<GeometryPoolHandle>(Allocator.Persistent);
+
+            m_vertexAllocator = new BlockAllocator();
+            m_vertexAllocator.Initialize(m_maxVertCounts);
+
+            m_indexAllocator = new BlockAllocator();
+            m_indexAllocator.Initialize(m_maxIndexCounts);
+
         }
-
-        internal static int DivUp(int x, int y) => (x + y - 1) / y;
-
-        private static int GetVertByteSize()
-        {
-            return System.Runtime.InteropServices.Marshal.SizeOf<Vector3>() + /*pos*/
-                   System.Runtime.InteropServices.Marshal.SizeOf<Vector2>() + /*uv0*/
-                   System.Runtime.InteropServices.Marshal.SizeOf<Vector2>() + /*uv1*/
-                   System.Runtime.InteropServices.Marshal.SizeOf<Vector3>() + /*N*/
-                   System.Runtime.InteropServices.Marshal.SizeOf<Vector3>();  /*T*/
-        }
-
-        private static int GetIndexByteSize()
-        {
-            return System.Runtime.InteropServices.Marshal.SizeOf<int>();
-        }
-
-        private int CalcVertexCount() => DivUp(m_desc.vertexPoolByteSize, GetVertByteSize());
-        private int CalcIndexCount() => DivUp(m_desc.indexPoolByteSize, GetIndexByteSize());
 
         public void Dispose()
         {
-            m_vertexPoolP.Release();
-            m_vertexPoolUV.Release();
-            m_vertexPoolUV1.Release();
-            m_vertexPoolN.Release();
-            m_vertexPoolT.Release();
+            m_indexAllocator.Dispose();
+            m_vertexAllocator.Dispose();
+
+            m_freeGeoSlots.Dispose();
+            m_geoSlots.Dispose();
+            m_meshSlots.Dispose();
+
             m_indexPool.Release();
+            m_vertexPoolT.Release();
+            m_vertexPoolN.Release();
+            m_vertexPoolUV1.Release();
+            m_vertexPoolUV.Release();
+            m_vertexPoolP.Release();
+        }
+
+        private static int DivUp(int x, int y) => (x + y - 1) / y;
+
+        private int CalcVertexCount() => DivUp(m_desc.vertexPoolByteSize, GetVertexByteSize());
+        private int CalcIndexCount() => DivUp(m_desc.indexPoolByteSize, GetIndexByteSize());
+
+        private void DeallocateSlot(ref GeometrySlot slot)
+        {
+            if (slot.vertexAlloc.valid)
+            {
+                m_vertexAllocator.FreeAllocation(slot.vertexAlloc);
+                slot.vertexAlloc = BlockAllocator.Allocation.Invalid;
+            }
+
+            if (slot.indexAlloc.valid)
+            {
+                m_indexAllocator.FreeAllocation(slot.indexAlloc);
+                slot.indexAlloc = BlockAllocator.Allocation.Invalid;
+            }
+        }
+
+        public bool AllocateGeo(int vertexCount, int indexCount, out GeometryPoolHandle outHandle)
+        {
+            var newSlot = new GeometrySlot()
+            {
+                vertexAlloc = BlockAllocator.Allocation.Invalid,
+                indexAlloc = BlockAllocator.Allocation.Invalid
+            };
+
+            newSlot.vertexAlloc = m_vertexAllocator.Allocate(vertexCount);
+            if (!newSlot.vertexAlloc.valid)
+            {
+                outHandle = GeometryPoolHandle.Invalid;
+                return false;
+            }
+
+            newSlot.indexAlloc = m_indexAllocator.Allocate(indexCount);
+            if (!newSlot.indexAlloc.valid)
+            {
+                //revert the allocation.
+                DeallocateSlot(ref newSlot);
+                outHandle = GeometryPoolHandle.Invalid;
+                return false;
+            }
+
+            if (m_freeGeoSlots.IsEmpty)
+            {
+                outHandle.index = m_geoSlots.Length;
+                m_geoSlots.Add(newSlot);
+            }
+            else
+            {
+                outHandle = m_freeGeoSlots[m_freeGeoSlots.Length - 1];
+                m_freeGeoSlots.RemoveAtSwapBack(m_freeGeoSlots.Length - 1);
+                Assertions.Assert.IsTrue(!m_geoSlots[outHandle.index].valid);
+                m_geoSlots[outHandle.index] = newSlot;
+            }
+
+            return true;
+        }
+
+        public void DeallocateGeo(GeometryPoolHandle handle)
+        {
+            if (!handle.valid)
+                throw new System.Exception("Cannot free invalid geo pool handle");
+
+            m_freeGeoSlots.Add(handle);
+            GeometrySlot slot = m_geoSlots[handle.index];
+            DeallocateSlot(ref slot);
+            m_geoSlots[handle.index] = slot;
+        }
+
+        public bool Register(Mesh mesh, out GeometryPoolHandle outHandle)
+        {
+            int meshHashCode = mesh.GetHashCode();
+            Assertions.Assert.IsTrue(meshHashCode != -1);
+            if (m_meshSlots.TryGetValue(meshHashCode, out MeshSlot meshSlot))
+            {
+                Assertions.Assert.IsTrue(meshHashCode == meshSlot.meshHash);
+                ++meshSlot.refCount;
+                m_meshSlots[meshSlot.meshHash] = meshSlot;
+                outHandle = meshSlot.geometryHandle;
+                return true;
+            }
+            else
+            {
+                var newSlot = new MeshSlot()
+                {
+                    refCount = 1,
+                    meshHash = meshHashCode,
+                };
+
+                int indexCount = 0;
+                for (int i = 0; i < (int)mesh.subMeshCount; ++i)
+                    indexCount += (int)mesh.GetIndexCount(i);
+
+                if (!AllocateGeo(mesh.vertexCount, indexCount, out outHandle))
+                    return false;
+
+                newSlot.geometryHandle = outHandle;
+                if (!m_meshSlots.TryAdd(meshHashCode, newSlot))
+                {
+                    //revert the allocation.
+                    DeallocateGeo(outHandle);
+                    outHandle = GeometryPoolHandle.Invalid;
+                    return false;
+                }
+
+                return true;
+            }
+        }
+
+        public void Unregister(Mesh mesh)
+        {
+            int meshHashCode = mesh.GetHashCode();
+            if (!m_meshSlots.TryGetValue(meshHashCode, out MeshSlot outSlot))
+                return;
+
+            --outSlot.refCount;
+            if (outSlot.refCount == 0)
+            {
+                m_meshSlots.Remove(meshHashCode);
+                DeallocateGeo(outSlot.geometryHandle);
+            }
+            else
+                m_meshSlots[meshHashCode] = outSlot;
+        }
+
+        public GeometryPoolHandle GetHandle(Mesh mesh)
+        {
+            int meshHashCode = mesh.GetHashCode();
+            if (!m_meshSlots.TryGetValue(meshHashCode, out MeshSlot outSlot))
+                return GeometryPoolHandle.Invalid;
+
+            return outSlot.geometryHandle;
         }
     }
-
 }
