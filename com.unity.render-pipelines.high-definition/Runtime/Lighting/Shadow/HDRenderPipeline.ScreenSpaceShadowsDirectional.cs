@@ -263,7 +263,7 @@ namespace UnityEngine.Rendering.HighDefinition
             // Render directional screen space shadow if required
             if (screenSpaceShadowRequired)
             {
-                bool rayTracedDirectionalRequired = (m_CurrentSunShadowMapFlags & HDProcessedVisibleLightsBuilder.ShadowMapFlags.WillRenderRayTracedShadow) != 0;
+                bool rayTracedDirectionalRequired = (m_CurrentSunShadowMapFlags & HDProcessedVisibleLightsBuilder.ShadowMapFlags.WillRenderRayTracedShadow) != 0 && GetRayTracingState();
                 // If the shadow is flagged as ray traced, we need to evaluate it completely
                 if (rayTracedDirectionalRequired)
                     RenderRayTracedDirectionalScreenSpaceShadow(renderGraph, hdCamera, depthBuffer, normalBuffer, motionVectorsBuffer, historyValidityBuffer, rayCountTexture, screenSpaceShadowArray);
