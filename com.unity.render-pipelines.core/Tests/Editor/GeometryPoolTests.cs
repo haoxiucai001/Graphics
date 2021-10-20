@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using System.Collections.Generic;
+using Unity.Collections;
 using UnityEngine.Rendering;
 
 namespace UnityEngine.Rendering.Tests
@@ -172,5 +173,130 @@ namespace UnityEngine.Rendering.Tests
 
             geometryPool.Dispose();
         }
+
+    
+        internal struct GeometryPoolTestIndexCpuData
+        {
+            CommandBuffer m_cmdBuffer;
+            AsyncGPUReadbackRequest m_request;
+            GeometryPool m_geometryPool;
+
+            public GeometryPool geoPool { get { return m_geometryPool; } }
+            public NativeArray<int> cpuIndexData;
+
+            public void Load(GeometryPool geometryPool)
+            {
+                m_cmdBuffer = new CommandBuffer();
+                m_geometryPool = geometryPool;
+                /*
+
+                m_request = AsyncGPUReadback.Request(geometryPool.globalIndexBuffer);
+                m_request.WaitForCompletion();
+                Assert.IsTrue(m_request.done);
+                Assert.IsTrue(!m_request.hasError);
+
+                cpuIndexData = m_request.GetData<int>();*/
+
+                var indexData = new NativeArray<int>(geometryPool.indicesCount, Allocator.Persistent);                
+                m_cmdBuffer.RequestAsyncReadback(geometryPool.globalIndexBuffer, (AsyncGPUReadbackRequest req) =>
+                {
+                    if (req.done)
+                        indexData.CopyFrom(req.GetData<int>());
+                });
+                m_cmdBuffer.WaitAllAsyncReadbackRequests();
+
+                Graphics.ExecuteCommandBuffer(m_cmdBuffer);                
+                cpuIndexData = indexData;
+            }
+
+            public void Dispose()
+            {
+                cpuIndexData.Dispose();
+                m_cmdBuffer.Dispose();
+            }
+        }
+
+        private void VerifyIndicesInPool(
+            in GeometryPoolTestIndexCpuData indexCpuData,
+            in GeometryPoolHandle handle,
+            Mesh mesh)
+        {
+            var gpuIndexData = indexCpuData.cpuIndexData;
+            var idxBufferBlock = indexCpuData.geoPool.GetIndexBufferBlock(handle).block;
+            for (int smId = 0; smId < (int)mesh.subMeshCount; ++smId)
+            {
+                var indices = mesh.GetIndices(smId);
+                Assert.IsTrue(indices.Length == idxBufferBlock.count);
+                if (indices.Length != idxBufferBlock.count)
+                    continue;
+
+                for (int i = 0; i < idxBufferBlock.count; ++i)
+                {
+                    int expected = indices[i];
+                    int result = gpuIndexData[idxBufferBlock.offset + i];
+
+                    if (expected != result)
+                        Debug.LogError("Expected index " + expected + " but got " + result);
+                    Assert.IsTrue(expected == result);
+                }
+            }
+        }
+
+        [Test]
+        public void TestGpuUploadIndexBufferGeometryPool()
+        {
+            var geometryPool = new GeometryPool(GeometryPoolDesc.NewDefault());
+
+            bool status;
+
+            status = geometryPool.Register(sCube, out var cubeHandle);
+            Assert.IsTrue(status);
+
+            status = geometryPool.Register(sSphere, out var sphereHandle);
+            Assert.IsTrue(status);
+
+            geometryPool.SendGpuCommands();
+
+            GeometryPoolTestIndexCpuData indexCpuData = new GeometryPoolTestIndexCpuData();
+            indexCpuData.Load(geometryPool);
+
+            VerifyIndicesInPool(indexCpuData, cubeHandle, sCube);
+            VerifyIndicesInPool(indexCpuData, sphereHandle, sSphere);
+
+            indexCpuData.Dispose();
+            geometryPool.Dispose();
+        }
+
+        [Test]
+        public void TestGpuUploadAddRemoveIndexBufferGeometryPool()
+        {
+            var geometryPool = new GeometryPool(GeometryPoolDesc.NewDefault());
+
+            bool status;
+
+            status = geometryPool.Register(sSphere, out var sphereHandle);
+            Assert.IsTrue(status);
+
+            status = geometryPool.Register(sCube, out var cubeHandle);
+            Assert.IsTrue(status);
+
+            geometryPool.SendGpuCommands();
+
+            geometryPool.Unregister(sSphere);
+
+            status = geometryPool.Register(sCapsule, out var capsuleHandle);
+            Assert.IsTrue(status);
+
+            geometryPool.SendGpuCommands();
+
+            GeometryPoolTestIndexCpuData indexCpuData = new GeometryPoolTestIndexCpuData();
+            indexCpuData.Load(geometryPool);
+            VerifyIndicesInPool(indexCpuData, cubeHandle, sCube);
+            VerifyIndicesInPool(indexCpuData, capsuleHandle, sCapsule);
+
+            indexCpuData.Dispose();
+            geometryPool.Dispose();
+        }
     }
 }
+

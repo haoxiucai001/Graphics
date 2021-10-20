@@ -82,6 +82,9 @@ namespace UnityEngine.Rendering
         public ComputeBuffer m_vertexPoolT   = null;
 
         public Mesh globalMesh = null;
+        public GraphicsBuffer globalIndexBuffer { get { return m_globalIndexBuffer;  } }
+        public int indicesCount => m_maxIndexCounts;
+        private GraphicsBuffer m_globalIndexBuffer = null;
 
         private int m_maxVertCounts;
         private int m_maxIndexCounts;
@@ -93,10 +96,31 @@ namespace UnityEngine.Rendering
         private NativeList<GeometrySlot> m_geoSlots;
         private NativeList<GeometryPoolHandle> m_freeGeoSlots;
 
+        private List<GraphicsBuffer> m_inputBufferReferences;
+
         private int m_usedGeoSlots;
+
+        private ComputeShader m_geometryPoolKernelsCS;
+        private int m_kernelMainUpdateIndexBuffer16;
+        private int m_kernelMainUpdateIndexBuffer32;
+        private int m_paramInputIBCount;
+        private int m_paramOutputIBOffset;
+        private int m_paramInputIndexBuffer;
+        private int m_paramOutputIndexBuffer;
+
+        private CommandBuffer m_cmdBuffer;
+        private bool m_mustClearCmdBuffer;
+        private int m_pendingCmds;
 
         public GeometryPool(in GeometryPoolDesc desc)
         {
+            LoadShaders();
+
+            m_cmdBuffer = new CommandBuffer();
+            m_inputBufferReferences = new List<GraphicsBuffer>();
+            m_mustClearCmdBuffer = false;
+            m_pendingCmds = 0;
+
             m_desc = desc;
             m_maxVertCounts = CalcVertexCount();
             m_maxIndexCounts = CalcIndexCount();
@@ -114,10 +138,10 @@ namespace UnityEngine.Rendering
             globalMesh.subMeshCount = desc.maxMeshes;            
             globalMesh.vertices = new Vector3[1];
             globalMesh.UploadMeshData(false);
+            m_globalIndexBuffer = globalMesh.GetIndexBuffer();            
 
-            Assertions.Assert.IsTrue(globalMesh.GetIndexBuffer() != null);
-            var ib = globalMesh.GetIndexBuffer();
-            Assertions.Assert.IsTrue((ib.target & GraphicsBuffer.Target.Raw) != 0);
+            Assertions.Assert.IsTrue(m_globalIndexBuffer != null);
+            Assertions.Assert.IsTrue((m_globalIndexBuffer.target & GraphicsBuffer.Target.Raw) != 0);
 
             m_meshSlots = new NativeHashMap<int, MeshSlot>(desc.maxMeshes, Allocator.Persistent);
             m_geoSlots = new NativeList<GeometrySlot>(Allocator.Persistent);
@@ -129,6 +153,16 @@ namespace UnityEngine.Rendering
             m_indexAllocator = new BlockAllocator();
             m_indexAllocator.Initialize(m_maxIndexCounts);
 
+        }
+
+        public void DisposeInputBuffers()
+        {
+            if (m_inputBufferReferences.Count == 0)
+                return;
+
+            foreach (var b in m_inputBufferReferences)
+                b.Dispose();
+            m_inputBufferReferences.Clear();
         }
 
         public void Dispose()
@@ -145,9 +179,23 @@ namespace UnityEngine.Rendering
             m_vertexPoolUV1.Release();
             m_vertexPoolUV.Release();
             m_vertexPoolP.Release();
+            m_cmdBuffer.Release();
 
-            CoreUtils.Destroy(globalMesh);
+            m_globalIndexBuffer.Dispose();
+            CoreUtils.Destroy(globalMesh);            
             globalMesh = null;
+            DisposeInputBuffers();
+        }
+
+        private void LoadShaders()
+        {
+            m_geometryPoolKernelsCS = (ComputeShader)Resources.Load("GeometryPoolKernels");
+            m_kernelMainUpdateIndexBuffer16 = m_geometryPoolKernelsCS.FindKernel("MainUpdateIndexBuffer16");
+            m_kernelMainUpdateIndexBuffer32 = m_geometryPoolKernelsCS.FindKernel("MainUpdateIndexBuffer32");
+            m_paramInputIndexBuffer = Shader.PropertyToID("_InputIndexBuffer");
+            m_paramOutputIndexBuffer = Shader.PropertyToID("_OutputIndexBuffer");
+            m_paramInputIBCount = Shader.PropertyToID("_InputIBCount");
+            m_paramOutputIBOffset = Shader.PropertyToID("_OutputIBOffset");
         }
 
         private static int DivUp(int x, int y) => (x + y - 1) / y;
@@ -273,6 +321,13 @@ namespace UnityEngine.Rendering
                     return false;
                 }
 
+                var geoSlot = m_geoSlots[outHandle.index];
+
+                CommandBuffer cmdBuffer = AllocateCommandBuffer(); //clear any previous cmd buffers.
+                GraphicsBuffer buffer = LoadIndexBuffer(cmdBuffer, mesh, out var indexBufferFormat);
+                Assertions.Assert.IsTrue((buffer.target & GraphicsBuffer.Target.Raw) != 0);
+                AddIndexUpdateCommand(cmdBuffer, indexBufferFormat, buffer, geoSlot.indexAlloc, m_globalIndexBuffer);
+
                 return true;
             }
         }
@@ -300,6 +355,82 @@ namespace UnityEngine.Rendering
                 return GeometryPoolHandle.Invalid;
 
             return outSlot.geometryHandle;
+        }
+
+        public void SendGpuCommands()
+        {
+            if (m_pendingCmds != 0)
+            {
+                Graphics.ExecuteCommandBuffer(m_cmdBuffer);
+                m_mustClearCmdBuffer = true;
+                m_pendingCmds = 0;
+            }
+
+            DisposeInputBuffers();
+        }
+
+        public BlockAllocator.Allocation GetIndexBufferBlock(GeometryPoolHandle handle)
+        {
+            if (handle.index < 0 || handle.index >= m_geoSlots.Length)
+                throw new System.Exception("Handle utilized is invalid");
+
+            return m_geoSlots[handle.index].indexAlloc;
+        }
+
+        private GraphicsBuffer LoadIndexBuffer(CommandBuffer cmdBuffer, Mesh mesh, out IndexFormat fmt)
+        {
+            if ((mesh.indexBufferTarget & GraphicsBuffer.Target.Raw) != 0)
+            {
+                fmt = mesh.indexFormat;
+                var idxBuffer = mesh.GetIndexBuffer();
+                m_inputBufferReferences.Add(idxBuffer);
+                return mesh.GetIndexBuffer();
+            }
+            else
+            {
+                fmt = IndexFormat.UInt32;
+
+                int indexCount = 0;
+                for (int i = 0; i < (int)mesh.subMeshCount; ++i)
+                    indexCount += (int)mesh.GetIndexCount(i);
+
+                var idxBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index | GraphicsBuffer.Target.Raw, indexCount, 4);
+                m_inputBufferReferences.Add(idxBuffer);
+
+                int indexOffset = 0;
+
+                for (int i = 0; i < (int)mesh.subMeshCount; ++i)
+                {
+                    int currentIndexCount = (int)mesh.GetIndexCount(i);
+                    cmdBuffer.SetBufferData(idxBuffer, mesh.GetIndices(i), 0, indexOffset, currentIndexCount);
+                    indexOffset += currentIndexCount;
+                }
+
+                return idxBuffer;
+            }
+        }
+
+        private CommandBuffer AllocateCommandBuffer()
+        {
+            if (m_mustClearCmdBuffer)
+            {
+                m_cmdBuffer.Clear();
+                m_mustClearCmdBuffer = false;
+            }
+
+            ++m_pendingCmds;
+            return m_cmdBuffer;
+        }
+
+        private void AddIndexUpdateCommand(CommandBuffer cmdBuffer, IndexFormat inputFormat, in GraphicsBuffer inputBuffer, in BlockAllocator.Allocation location, GraphicsBuffer outputBuffer)
+        {
+            cmdBuffer.SetComputeIntParam(m_geometryPoolKernelsCS, m_paramInputIBCount, location.block.count);
+            cmdBuffer.SetComputeIntParam(m_geometryPoolKernelsCS, m_paramOutputIBOffset, location.block.offset);
+            int kernel = inputFormat == IndexFormat.UInt16 ? m_kernelMainUpdateIndexBuffer16 : m_kernelMainUpdateIndexBuffer32;
+            cmdBuffer.SetComputeBufferParam(m_geometryPoolKernelsCS, kernel, m_paramInputIndexBuffer, inputBuffer);
+            cmdBuffer.SetComputeBufferParam(m_geometryPoolKernelsCS, kernel, m_paramOutputIndexBuffer, outputBuffer);
+            int groupCountsX = DivUp(location.block.count, 64);
+            cmdBuffer.DispatchCompute(m_geometryPoolKernelsCS, kernel, groupCountsX, 1, 1);
         }
     }
 }
