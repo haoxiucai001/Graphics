@@ -93,12 +93,12 @@ namespace UnityEngine.Rendering
 
         GeometryPoolDesc m_Desc;
 
-        public ComputeBuffer m_VertexPool  = null;
+        public ComputeBuffer m_GlobalVertexBuffer  = null;
 
         public Mesh globalMesh = null;
-        public GraphicsBuffer globalIndexBuffer { get { return m_globalIndexBuffer;  } }
+        public GraphicsBuffer globalIndexBuffer { get { return m_GlobalIndexBuffer;  } }
         public int indicesCount => m_MaxIndexCounts;
-        private GraphicsBuffer m_globalIndexBuffer = null;
+        private GraphicsBuffer m_GlobalIndexBuffer = null;
 
         private int m_MaxVertCounts;
         private int m_MaxIndexCounts;
@@ -127,10 +127,15 @@ namespace UnityEngine.Rendering
         private int m_ParamOutputVBSize;
         private int m_ParamOutputVBOffset;
         private int m_ParamInputPosBufferStride;
+        private int m_ParamInputPosBufferOffset;
         private int m_ParamInputUv0BufferStride;
+        private int m_ParamInputUv0BufferOffset;
         private int m_ParamInputUv1BufferStride;
+        private int m_ParamInputUv1BufferOffset;
         private int m_ParamInputNormalBufferStride;
+        private int m_ParamInputNormalBufferOffset;
         private int m_ParamInputTangentBufferStride;
+        private int m_ParamInputTangentBufferOffset;
         private int m_ParamInputFlags;
         private int m_ParamPosBuffer;
         private int m_ParamUv0Buffer;
@@ -157,7 +162,7 @@ namespace UnityEngine.Rendering
             m_MaxIndexCounts = CalcIndexCount();
             m_UsedGeoSlots = 0;
 
-            m_VertexPool = new ComputeBuffer(DivUp(m_MaxVertCounts * GetVertexByteSize(), 4), 4, ComputeBufferType.Raw);
+            m_GlobalVertexBuffer = new ComputeBuffer(DivUp(m_MaxVertCounts * GetVertexByteSize(), 4), 4, ComputeBufferType.Raw);
 
             globalMesh      = new Mesh();
             globalMesh.indexBufferTarget = GraphicsBuffer.Target.Raw;
@@ -165,10 +170,10 @@ namespace UnityEngine.Rendering
             globalMesh.subMeshCount = desc.maxMeshes;            
             globalMesh.vertices = new Vector3[1];
             globalMesh.UploadMeshData(false);
-            m_globalIndexBuffer = globalMesh.GetIndexBuffer();            
+            m_GlobalIndexBuffer = globalMesh.GetIndexBuffer();            
 
-            Assertions.Assert.IsTrue(m_globalIndexBuffer != null);
-            Assertions.Assert.IsTrue((m_globalIndexBuffer.target & GraphicsBuffer.Target.Raw) != 0);
+            Assertions.Assert.IsTrue(m_GlobalIndexBuffer != null);
+            Assertions.Assert.IsTrue((m_GlobalIndexBuffer.target & GraphicsBuffer.Target.Raw) != 0);
 
             m_MeshSlots = new NativeHashMap<int, MeshSlot>(desc.maxMeshes, Allocator.Persistent);
             m_GeoSlots = new NativeList<GeometrySlot>(Allocator.Persistent);
@@ -200,10 +205,10 @@ namespace UnityEngine.Rendering
             m_GeoSlots.Dispose();
             m_MeshSlots.Dispose();
 
-            m_VertexPool.Release();
+            m_GlobalVertexBuffer.Release();
             m_CmdBuffer.Release();
 
-            m_globalIndexBuffer.Dispose();
+            m_GlobalIndexBuffer.Dispose();
             CoreUtils.Destroy(globalMesh);            
             globalMesh = null;
             DisposeInputBuffers();
@@ -224,10 +229,15 @@ namespace UnityEngine.Rendering
             m_ParamOutputVBSize = Shader.PropertyToID("_OutputVBSize");
             m_ParamOutputVBOffset = Shader.PropertyToID("_OutputVBOffset");
             m_ParamInputPosBufferStride = Shader.PropertyToID("_InputPosBufferStride");
+            m_ParamInputPosBufferOffset = Shader.PropertyToID("_InputPosBufferOffset");
             m_ParamInputUv0BufferStride = Shader.PropertyToID("_InputUv0BufferStride");
+            m_ParamInputUv0BufferOffset = Shader.PropertyToID("_InputUv0BufferOffset");
             m_ParamInputUv1BufferStride = Shader.PropertyToID("_InputUv1BufferStride");
+            m_ParamInputUv1BufferOffset = Shader.PropertyToID("_InputUv1BufferOffset");
             m_ParamInputNormalBufferStride = Shader.PropertyToID("_InputNormalBufferStride");
+            m_ParamInputNormalBufferOffset = Shader.PropertyToID("_InputNormalBufferOffset");
             m_ParamInputTangentBufferStride = Shader.PropertyToID("_InputTangentBufferStride");
+            m_ParamInputTangentBufferOffset = Shader.PropertyToID("_InputTangentBufferOffset");
             m_ParamInputFlags = Shader.PropertyToID("_InputFlags");
             m_ParamPosBuffer = Shader.PropertyToID("_PosBuffer");
             m_ParamUv0Buffer = Shader.PropertyToID("_Uv0Buffer");
@@ -327,10 +337,39 @@ namespace UnityEngine.Rendering
             var geoSlot = m_GeoSlots[handle.index];
             CommandBuffer cmdBuffer = AllocateCommandBuffer(); //clear any previous cmd buffers.
 
+            mesh.indexBufferTarget |= GraphicsBuffer.Target.Raw;
+            mesh.vertexBufferTarget |= GraphicsBuffer.Target.Raw;
+
             //Update index buffer
             GraphicsBuffer buffer = LoadIndexBuffer(cmdBuffer, mesh, out var indexBufferFormat);
             Assertions.Assert.IsTrue((buffer.target & GraphicsBuffer.Target.Raw) != 0);
-            AddIndexUpdateCommand(cmdBuffer, indexBufferFormat, buffer, geoSlot.indexAlloc, m_globalIndexBuffer);
+            AddIndexUpdateCommand(cmdBuffer, indexBufferFormat, buffer, geoSlot.indexAlloc, m_GlobalIndexBuffer);
+
+            //Update vertex buffer
+            GraphicsBuffer posBuffer = LoadVertexAttribInfo(mesh, VertexAttribute.Position, out int posStride, out int posOffset, out int _);
+            Assertions.Assert.IsTrue(posBuffer != null);
+            Assertions.Assert.IsTrue((posBuffer.target & GraphicsBuffer.Target.Raw) != 0);
+
+            GraphicsBuffer uvBuffer = LoadVertexAttribInfo(mesh, VertexAttribute.TexCoord0, out int uvStride, out int uvOffset, out int _);
+            Assertions.Assert.IsTrue(uvBuffer != null);
+            Assertions.Assert.IsTrue((uvBuffer.target & GraphicsBuffer.Target.Raw) != 0);
+
+            GraphicsBuffer uv1Buffer = LoadVertexAttribInfo(mesh, VertexAttribute.TexCoord1, out int uv1Stride, out int uv1Offset, out int _);
+            if (uv1Buffer != null)
+                Assertions.Assert.IsTrue((uv1Buffer.target & GraphicsBuffer.Target.Raw) != 0);
+
+            GraphicsBuffer nBuffer = LoadVertexAttribInfo(mesh, VertexAttribute.Normal, out int nStride, out int nOffset, out int _);
+            Assertions.Assert.IsTrue(nBuffer != null);
+            Assertions.Assert.IsTrue((nBuffer.target & GraphicsBuffer.Target.Raw) != 0);
+
+            GraphicsBuffer tBuffer = LoadVertexAttribInfo(mesh, VertexAttribute.Tangent, out int tStride, out int tOffset, out int _);
+            if (tBuffer != null)
+                Assertions.Assert.IsTrue(tBuffer != null);
+
+            AddVertexUpdateCommand(
+                cmdBuffer, posBuffer, uvBuffer, uv1Buffer, nBuffer, tBuffer,
+                posStride, posOffset, uvStride, uvOffset, uv1Stride, uv1Offset, nStride, nOffset, tStride, tOffset,
+                geoSlot.vertexAlloc, m_GlobalVertexBuffer);
         }
 
         public bool Register(Mesh mesh, out GeometryPoolHandle outHandle)
@@ -453,6 +492,25 @@ namespace UnityEngine.Rendering
             }
         }
 
+        GraphicsBuffer LoadVertexAttribInfo(Mesh mesh, VertexAttribute attribute, out int streamStride, out int attributeOffset, out int attributeBytes)
+        {
+            if (!mesh.HasVertexAttribute(attribute))
+            {
+                streamStride = attributeOffset = attributeBytes = 0;
+                return null;
+            }
+
+            int stream = mesh.GetVertexAttributeStream(attribute);
+            streamStride = mesh.GetVertexBufferStride(stream);
+            attributeOffset = mesh.GetVertexAttributeOffset(attribute);
+            attributeBytes = GetFormatByteCount(mesh.GetVertexAttributeFormat(attribute)) * mesh.GetVertexAttributeDimension(attribute);
+
+            var gb = mesh.GetVertexBuffer(stream);
+            m_InputBufferReferences.Add(gb);
+            return gb;
+        }
+    
+
         private CommandBuffer AllocateCommandBuffer()
         {
             if (m_MustClearCmdBuffer)
@@ -479,9 +537,9 @@ namespace UnityEngine.Rendering
         private void AddVertexUpdateCommand(
             CommandBuffer cmdBuffer,
             in GraphicsBuffer p, in GraphicsBuffer uv0, in GraphicsBuffer uv1, in GraphicsBuffer n, in GraphicsBuffer t,
-            int posStride, int uv0Stride, int uv1Stride, int normalStride, int tangentStride,
+            int posStride, int posOffset, int uv0Stride, int uv0Offset, int uv1Stride, int uv1Offset, int normalStride, int normalOffset, int tangentStride, int tangentOffset,
             in BlockAllocator.Allocation location,
-            GraphicsBuffer outputVertexBuffer)
+            ComputeBuffer outputVertexBuffer)
         {
             
             GeoPoolInputFlags flags =
@@ -501,11 +559,9 @@ namespace UnityEngine.Rendering
             int kernel = m_KernelMainUpdateVertexBuffer;
             cmdBuffer.SetComputeBufferParam(m_GeometryPoolKernelsCS, kernel, m_ParamPosBuffer, p);
             cmdBuffer.SetComputeBufferParam(m_GeometryPoolKernelsCS, kernel, m_ParamUv0Buffer, uv0);
-            if (uv1 != null)
-                cmdBuffer.SetComputeBufferParam(m_GeometryPoolKernelsCS, kernel, m_ParamUv1Buffer, uv1);
+            cmdBuffer.SetComputeBufferParam(m_GeometryPoolKernelsCS, kernel, m_ParamUv1Buffer, uv1 != null ? t : p); /*unity always wants something set*/
             cmdBuffer.SetComputeBufferParam(m_GeometryPoolKernelsCS, kernel, m_ParamNormalBuffer, n);
-            if (t != null)
-                cmdBuffer.SetComputeBufferParam(m_GeometryPoolKernelsCS, kernel, m_ParamTangentBuffer, t);
+            cmdBuffer.SetComputeBufferParam(m_GeometryPoolKernelsCS, kernel, m_ParamTangentBuffer, t != null ? t : p);/*unity always wants something set*/
 
             cmdBuffer.SetComputeBufferParam(m_GeometryPoolKernelsCS, kernel, m_ParamOutputVB, outputVertexBuffer);
 

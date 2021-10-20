@@ -54,10 +54,20 @@ int _OutputVBSize;
 int _OutputVBOffset;
 
 int _InputPosBufferStride;
+int _InputPosBufferOffset;
+
 int _InputUv0BufferStride;
+int _InputUv0BufferOffset;
+
 int _InputUv1BufferStride;
+int _InputUv1BufferOffset;
+
 int _InputNormalBufferStride;
+int _InputNormalBufferOffset;
+
 int _InputTangentBufferStride;
+int _InputTangentBufferOffset;
+
 int _InputFlags;
 
 ByteAddressBuffer _PosBuffer;
@@ -103,11 +113,20 @@ void MainUpdateVertexBuffer(uint3 dispatchThreadID : SV_DispatchThreadID)
         return;
 
     GeometryPoolVertex vtx;
-    vtx.pos = asfloat(_PosBuffer.Load3((vertexOffset * _InputPosBufferStride)));
-    vtx.uv  = asfloat(_Uv0Buffer.Load2((vertexOffset * _InputUv0BufferStride)));
-    vtx.uv1 = asfloat(_Uv1Buffer.Load2((vertexOffset * _InputUv1BufferStride)));
-    vtx.N = asfloat(_NormalBuffer.Load3((vertexOffset * _InputNormalBufferStride)));
-    vtx.T = asfloat(_TangentBuffer.Load3((vertexOffset * _InputTangentBufferStride)));
+    vtx.pos = asfloat(_PosBuffer.Load3(_InputPosBufferOffset + (vertexOffset * _InputPosBufferStride)));
+    vtx.uv  = asfloat(_Uv0Buffer.Load2(_InputUv0BufferOffset + (vertexOffset * _InputUv0BufferStride)));
+        
+    if ((_InputFlags & GEOPOOLINPUTFLAGS_HAS_UV1) != 0)
+        vtx.uv1 = asfloat(_Uv1Buffer.Load2(_InputUv1BufferOffset + (vertexOffset * _InputUv1BufferStride)));
+    else
+        vtx.uv1 = float2(0, 0);
+
+    vtx.N = asfloat(_NormalBuffer.Load3(_InputNormalBufferOffset + (vertexOffset * _InputNormalBufferStride)));
+
+    if ((_InputFlags & GEOPOOLINPUTFLAGS_HAS_TANGENT) != 0)
+        vtx.T = asfloat(_TangentBuffer.Load3(_InputTangentBufferOffset + (vertexOffset * _InputTangentBufferStride)));
+    else
+        vtx.T = float3(0, 0, 0);
 
     StoreVertex(_OutputVBOffset + vertexOffset, vtx, _InputFlags, _OutputVBSize, _OutputVB);
 }
