@@ -5,12 +5,12 @@
 #ifndef VERTEXBUFFERCOMPACTION_CS_HLSL
 #define VERTEXBUFFERCOMPACTION_CS_HLSL
 //
-// VertexBufferCompaction+VisibilityBufferConstants:  static fields
+// UnityEngine.Rendering.VertexBufferCompaction+VisibilityBufferConstants:  static fields
 //
 #define CLUSTER_SIZE_IN_TRIANGLES (128)
 #define CLUSTER_SIZE_IN_INDICES (384)
 
-// Generated from VertexBufferCompaction+CompactVertex
+// Generated from UnityEngine.Rendering.VertexBufferCompaction+CompactVertex
 // PackingRules = Exact
 struct CompactVertex
 {
@@ -21,7 +21,7 @@ struct CompactVertex
     float4 T;
 };
 
-// Generated from VertexBufferCompaction+InstanceVData
+// Generated from UnityEngine.Rendering.VertexBufferCompaction+InstanceVData
 // PackingRules = Exact
 struct InstanceVData
 {
@@ -33,4 +33,3 @@ struct InstanceVData
 
 
 #endif
-

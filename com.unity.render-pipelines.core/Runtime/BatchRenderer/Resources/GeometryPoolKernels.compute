@@ -1,18 +1,20 @@
 #pragma kernel MainUpdateIndexBuffer16
 #pragma kernel MainUpdateIndexBuffer32
+#pragma kernel MainUpdateVertexBuffer
+
+#include "Packages/com.unity.render-pipelines.core/Runtime/BatchRenderer/Resources/GeometryPoolDefs.cs.hlsl"
 
 //#pragma enable_d3d11_debug_symbols
 
-ByteAddressBuffer _InputIndexBuffer;
-RWByteAddressBuffer _OutputIndexBuffer;
-
 #define _InputIBOffset  0
-
-int _InputIBCount;
-int _OutputIBOffset;
 
 #define GROUP_SIZE_X 64
 #define GROUP_SIZE_X_HALF (GROUP_SIZE_X >> 1)
+
+int _InputIBCount;
+int _OutputIBOffset;
+ByteAddressBuffer _InputIndexBuffer;
+RWByteAddressBuffer _OutputIndexBuffer;
 
 [numthreads(GROUP_SIZE_X,1,1)]
 void MainUpdateIndexBuffer32(uint3 dispatchThreadID : SV_DispatchThreadID)
@@ -45,4 +47,67 @@ void MainUpdateIndexBuffer16(uint3 dispatchThreadID : SV_DispatchThreadID, uint 
 
     uint storageAddress = ((uint)_OutputIBOffset + bufferOffset) << 2;
     _OutputIndexBuffer.Store(storageAddress, value);
+} 
+
+int _InputVBCount;
+int _OutputVBSize;
+int _OutputVBOffset;
+
+int _InputPosBufferStride;
+int _InputUv0BufferStride;
+int _InputUv1BufferStride;
+int _InputNormalBufferStride;
+int _InputTangentBufferStride;
+int _InputFlags;
+
+ByteAddressBuffer _PosBuffer;
+ByteAddressBuffer _Uv0Buffer;
+ByteAddressBuffer _Uv1Buffer;
+ByteAddressBuffer _NormalBuffer;
+ByteAddressBuffer _TangentBuffer;
+
+RWByteAddressBuffer _OutputVB;
+
+void StoreVertex(
+    int vertexIndex,
+    in GeometryPoolVertex vertex,
+    int vertexFlags,
+    int outputBufferSize,
+    RWByteAddressBuffer output)
+{
+    int componentOffset = 0;
+
+    output.Store3(componentOffset + vertexIndex * GEO_POOL_POS_BYTE_SIZE, asuint(vertex.pos));
+    componentOffset += outputBufferSize * GEO_POOL_POS_BYTE_SIZE;
+
+    output.Store2(componentOffset + vertexIndex * GEO_POOL_UV0BYTE_SIZE, asuint(vertex.uv));
+    componentOffset += outputBufferSize * GEO_POOL_UV0BYTE_SIZE;
+
+    if ((vertexFlags & GEOPOOLINPUTFLAGS_HAS_UV1) != 0)
+        output.Store2(componentOffset + vertexIndex * GEO_POOL_UV1BYTE_SIZE, asuint(vertex.uv1));
+    componentOffset += outputBufferSize * GEO_POOL_UV1BYTE_SIZE;
+
+    output.Store3(componentOffset + vertexIndex * GEO_POOL_NORMAL_BYTE_SIZE, asuint(vertex.N));
+    componentOffset += outputBufferSize * GEO_POOL_NORMAL_BYTE_SIZE;
+
+    if ((vertexFlags & GEOPOOLINPUTFLAGS_HAS_TANGENT) != 0)
+        output.Store2(componentOffset + vertexIndex * GEO_POOL_TANGENT_BYTE_SIZE, asuint(vertex.uv1));
+    componentOffset += outputBufferSize * GEO_POOL_TANGENT_BYTE_SIZE;
+}
+
+[numthreads(GROUP_SIZE_X, 1, 1)]
+void MainUpdateVertexBuffer(uint3 dispatchThreadID : SV_DispatchThreadID)
+{
+    int vertexOffset = (int)dispatchThreadID.x;
+    if (vertexOffset >= _InputVBCount)
+        return;
+
+    GeometryPoolVertex vtx;
+    vtx.pos = asfloat(_PosBuffer.Load3((vertexOffset * _InputPosBufferStride)));
+    vtx.uv  = asfloat(_Uv0Buffer.Load2((vertexOffset * _InputUv0BufferStride)));
+    vtx.uv1 = asfloat(_Uv1Buffer.Load2((vertexOffset * _InputUv1BufferStride)));
+    vtx.N = asfloat(_NormalBuffer.Load3((vertexOffset * _InputNormalBufferStride)));
+    vtx.T = asfloat(_TangentBuffer.Load3((vertexOffset * _InputTangentBufferStride)));
+
+    StoreVertex(_OutputVBOffset + vertexOffset, vtx, _InputFlags, _OutputVBSize, _OutputVB);
 }
