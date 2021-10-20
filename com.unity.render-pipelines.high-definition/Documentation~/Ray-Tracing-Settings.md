@@ -7,7 +7,7 @@ In the High Definition Render Pipeline (HDRP), various ray-traced effects share 
 1. In the Scene or Hierarchy view, select a GameObject that contains a Volume component to view it in the Inspector.
 2. In the Inspector, navigate to **Add Override > Ray Tracing** and click on **Ray Tracing Settings**.
 
-## Mannually building the Ray Tracing Acceleration Structure
+## Manually building the Ray Tracing Acceleration Structure
 
 HDRP provides a utility function that adds objects to the ray tracing acceleration structure.
 The function is `AddInstanceToRAS` and it takes a [Renderer](https://docs.unity3d.com/ScriptReference/Renderer.html)) as a parameter and booleans and layers to include or not the renderer into the calculations of different ray traced effects.
