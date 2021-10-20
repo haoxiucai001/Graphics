@@ -427,7 +427,7 @@ namespace UnityEngine.Rendering
                 fmt = mesh.indexFormat;
                 var idxBuffer = mesh.GetIndexBuffer();
                 m_InputBufferReferences.Add(idxBuffer);
-                return mesh.GetIndexBuffer();
+                return idxBuffer;
             }
             else
             {
