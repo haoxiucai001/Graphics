@@ -870,16 +870,16 @@ namespace UnityEngine.Rendering.HighDefinition
                 {
                     builder.UseColorBuffer(prepassOutput.motionVectorsBuffer, index++);
                 }
-                else
-                {
-                    bool msaa = hdCamera.msaaEnabled;
+                //else
+                //{
+                //    bool msaa = hdCamera.msaaEnabled;
 
-                    // It doesn't really matter what gets bound here since the color mask state set will prevent this from ever being written to. However, we still need to bind something
-                    // to avoid warnings about unbound render targets. The following rendertarget could really be anything if renderVelocitiesForTransparent
-                    // Create a new target here should reuse existing already released one
-                    builder.UseColorBuffer(builder.CreateTransientTexture(new TextureDesc(Vector2.one, true, true)
-                    { colorFormat = GraphicsFormat.R8G8B8A8_SRGB, bindTextureMS = msaa, msaaSamples = hdCamera.msaaSamples, name = "Transparency Velocity Dummy" }), index++);
-                }
+                //    // It doesn't really matter what gets bound here since the color mask state set will prevent this from ever being written to. However, we still need to bind something
+                //    // to avoid warnings about unbound render targets. The following rendertarget could really be anything if renderVelocitiesForTransparent
+                //    // Create a new target here should reuse existing already released one
+                //    builder.UseColorBuffer(builder.CreateTransientTexture(new TextureDesc(Vector2.one, true, true)
+                //    { colorFormat = GraphicsFormat.R8G8B8A8_SRGB, bindTextureMS = msaa, msaaSamples = hdCamera.msaaSamples, name = "Transparency Velocity Dummy" }), index++);
+                //}
                 builder.UseDepthBuffer(prepassOutput.depthBuffer, DepthAccess.ReadWrite);
 
                 if (colorPyramid != null && hdCamera.frameSettings.IsEnabled(FrameSettingsField.Refraction) && !preRefractionPass)
