@@ -1541,6 +1541,7 @@ namespace UnityEngine.Rendering.HighDefinition
                 m_ProcessedLightsBuilder.Build(
                     hdCamera,
                     cullResults,
+                    GetRayTracingState(),
                     m_ShadowManager,
                     m_ShadowInitParameters,
                     aovRequest,

@@ -128,7 +128,7 @@ namespace UnityEngine.Rendering.HighDefinition
                 passData.directionalShadowSample = m_RaytracingDirectionalShadowSample;
 
                 // Grab the acceleration structure for the target camera
-                passData.accelerationStructure = RequestAccelerationStructure();
+                passData.accelerationStructure = RequestAccelerationStructure(hdCamera);
                 passData.screenSpaceShadowCS = m_ScreenSpaceShadowsCS;
                 passData.screenSpaceShadowRT = m_ScreenSpaceShadowsRT;
                 passData.shaderVariablesRayTracingCB = m_ShaderVariablesRayTracingCB;

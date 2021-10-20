@@ -885,7 +885,7 @@ namespace UnityEngine.Rendering.HighDefinition
                 bool enableRaytracedReflections = hdCamera.frameSettings.IsEnabled(FrameSettingsField.RayTracing) && ScreenSpaceReflection.RayTracingActive(settings);
                 m_ShaderVariablesGlobalCB._EnableRayTracedReflections = enableRaytracedReflections ? 1 : 0;
                 RecursiveRendering recursiveSettings = hdCamera.volumeStack.GetComponent<RecursiveRendering>();
-                m_ShaderVariablesGlobalCB._EnableRecursiveRayTracing = recursiveSettings.enable.value ? 1u : 0u;
+                m_ShaderVariablesGlobalCB._EnableRecursiveRayTracing = recursiveSettings.enable.value && GetRayTracingState() && GetRayTracingClusterState() ? 1u : 0u;
 
                 m_ShaderVariablesGlobalCB._SpecularOcclusionBlend = EvaluateSpecularOcclusionFlag(hdCamera);
             }

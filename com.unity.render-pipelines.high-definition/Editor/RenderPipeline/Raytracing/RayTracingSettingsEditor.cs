@@ -45,7 +45,12 @@ namespace UnityEditor.Rendering.HighDefinition
             PropertyField(m_ExtendCameraCulling);
             PropertyField(m_DirectionalShadowRayLength);
             PropertyField(m_DirectionalShadowFallbackIntensity);
+
             PropertyField(m_RTASBuildMode, k_RTASBuildModeText);
+            if ((RTASBuildMode)m_RTASBuildMode.value.enumValueIndex == RTASBuildMode.Manual)
+            {
+                EditorGUILayout.HelpBox("When set to Manual, the RTAS build mode expects a ray tracing acceleration structure to be set on the camera. If not, all ray traced effects will be disabled. This option does not affect the scene view.", MessageType.Info, wide: true);
+            }
         }
     }
 }

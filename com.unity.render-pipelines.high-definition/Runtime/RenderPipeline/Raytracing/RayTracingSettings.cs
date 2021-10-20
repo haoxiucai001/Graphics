@@ -71,7 +71,7 @@ namespace UnityEngine.Rendering.HighDefinition
         /// </summary>
         [AdditionalProperty]
         public RTASBuildModeParameter buildMode = new RTASBuildModeParameter(RTASBuildMode.Automatic);
-        
+
         /// <summary>
         /// Default constructor for the ray tracing settings volume component.
         /// </summary>

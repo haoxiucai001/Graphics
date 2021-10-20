@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Use RayTracingAccelerationStructure.CullInstances to filter Renderers and populate the acceleration structure with ray tracing instances for improved CPU performance on the main thread.
 - Changed the max distance for Light Anchors to avoid unstability with high values (case 1362802).
 - PrepareLightsForGPU CPU Light loop performance improvement (40% to 70% faster), utilizing burst and optimized. Utilizing better sorting, distributing work in jobs and improving cache access of light data.
+- Added controls for the users to manually feed the ray tracing acceleration structure that should be used for a given camera (case 1370678).
 
 ## [13.1.0] - 2021-09-24
 
